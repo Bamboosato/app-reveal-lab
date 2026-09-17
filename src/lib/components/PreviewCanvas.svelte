@@ -32,6 +32,18 @@
   }: Props = $props();
 
   let containerEl = $state<HTMLDivElement | null>(null);
+  let isFullscreen = $state(false);
+
+  // フルスクリーン状態の検知
+  $effect(() => {
+    const handleFullscreenChange = () => {
+      isFullscreen = document.fullscreenElement === containerEl;
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  });
 
   // フルスクリーン切り替え
   function toggleFullScreen() {
@@ -56,7 +68,9 @@
 
 <div
   bind:this={containerEl}
-  style="background: #1f2937; border-radius: 8px; padding: 1rem; border: 1px solid #374151; display: flex; flex-direction: column; gap: 0.75rem;"
+  style="{isFullscreen
+    ? 'position: fixed; inset: 0; width: 100vw; height: 100vh; background: #030712; padding: 1.5rem; z-index: 9999; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: 1rem;'
+    : 'background: #1f2937; border-radius: 8px; padding: 1rem; border: 1px solid #374151; display: flex; flex-direction: column; gap: 0.75rem;'}"
 >
   <!-- プレビューヘッダー情報 -->
   <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #9ca3af;">
@@ -65,23 +79,32 @@
       <span style="background: #374151; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem;">
         {dimensions.width} × {dimensions.height}
       </span>
+      {#if isFullscreen}
+        <span style="background: #2563eb; color: white; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.7rem;">
+          全画面モード (Escで終了)
+        </span>
+      {/if}
     </div>
     <button
       onclick={toggleFullScreen}
-      title="全画面表示"
-      style="background: transparent; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem; padding: 0.2rem;"
+      title={isFullscreen ? '全画面表示を終了' : '全画面表示'}
+      style="background: {isFullscreen ? '#374151' : 'transparent'}; border: none; color: #e5e7eb; cursor: pointer; font-size: 1.1rem; padding: 0.2rem 0.5rem; border-radius: 4px;"
     >
-      ⛶
+      {isFullscreen ? '🗗' : '⛶'}
     </button>
   </div>
 
   <!-- Canvasコンテナ (アスペクト比維持) -->
   <div
-    style="position: relative; width: 100%; max-height: 480px; aspect-ratio: {cssAspectRatio}; margin: 0 auto; background: #000000; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);"
+    style="{isFullscreen
+      ? 'flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden;'
+      : 'position: relative; width: 100%; max-height: 480px; aspect-ratio: ' + cssAspectRatio + '; margin: 0 auto; background: #000000; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);'}"
   >
     <canvas
       use:bindCanvas
-      style="width: 100%; height: 100%; object-fit: contain; display: block;"
+      style="{isFullscreen
+        ? 'max-width: 100%; max-height: 100%; aspect-ratio: ' + cssAspectRatio + '; width: auto; height: auto; object-fit: contain; display: block; border-radius: 6px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7);'
+        : 'width: 100%; height: 100%; object-fit: contain; display: block;'}"
     ></canvas>
   </div>
 
