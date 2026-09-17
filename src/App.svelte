@@ -7,7 +7,7 @@
   import ExportModal from './lib/components/ExportModal.svelte';
   import PresetModal from './lib/components/PresetModal.svelte';
   import { RevealRenderer } from './lib/core/renderer';
-  import { calculateCanvasDimensions, generateSampleImage } from './lib/core/imageLoader';
+  import { calculateCanvasDimensions, generateSampleImage, loadImageFromFile } from './lib/core/imageLoader';
   import type { CanvasSettings, EffectState, ResolutionDimension } from './lib/core/types';
   import type { AppRevealPreset } from './lib/preset/presetTypes';
 
@@ -80,11 +80,13 @@
     )
   );
 
-  // 寸法や設定変更時のレンダラーリサイズ＆再描画
+  // 寸法や設定変更時のレンダラーリサイズ＆再描画（再生中の二重描画は抑止）
   $effect(() => {
     if (renderer) {
       renderer.resize(dimensions.width, dimensions.height);
-      renderCurrentFrame();
+      if (!isPlaying) {
+        renderCurrentFrame();
+      }
     }
   });
 
@@ -122,10 +124,32 @@
       }
     }
 
+    async function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            try {
+              const img = await loadImageFromFile(file);
+              handleUpdateImage(img);
+            } catch (err: any) {
+              alert('クリップボード画像の読み込みに失敗しました: ' + err.message);
+            }
+            break;
+          }
+        }
+      }
+    }
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('paste', handlePaste);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handlePaste);
       if (animFrameId) cancelAnimationFrame(animFrameId);
       renderer?.dispose();
     };
@@ -234,6 +258,7 @@
       fit: preset.canvas.fit,
       positionOffset: { ...preset.canvas.positionOffset },
       backgroundColor: preset.canvas.backgroundColor,
+      transparent: Boolean(preset.canvas.transparent),
     };
     // 2. 演出設定
     effectState = {

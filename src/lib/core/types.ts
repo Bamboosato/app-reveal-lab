@@ -17,6 +17,7 @@ export interface CanvasSettings {
   fit: FitMode;
   positionOffset: { x: number; y: number }; // -1.0 ~ 1.0
   backgroundColor: string; // HEX (#000000)
+  transparent?: boolean; // PNG / GIF 出力時のみ有効
 }
 
 export interface CommonParams {

@@ -4,6 +4,8 @@
   import type { RevealRenderer } from '../core/renderer';
   import type { EffectState, CanvasSettings } from '../core/types';
   import { ExportPipeline } from '../export/exportPipeline';
+  import { checkVideoConfigSupported } from '../spike/capabilities';
+  import { calculateCanvasDimensions } from '../core/imageLoader';
 
   interface Props {
     isOpen: boolean;
@@ -30,10 +32,38 @@
   let result = $state<ExportResult | null>(null);
   let errorMsg = $state<string | null>(null);
 
+  // コーデック動的能力判定状態
+  let codecSupport = $state<{
+    mp4Supported: boolean;
+    webmSupported: boolean;
+    currentSupported: boolean;
+    errorReason?: string;
+  }>({
+    mp4Supported: true,
+    webmSupported: true,
+    currentSupported: true,
+  });
+
   let activePipeline: ExportPipeline | null = null;
+
+  // 成果物Blob URLの破棄ヘルパー
+  function cleanupBlobUrl() {
+    if (result?.url) {
+      URL.revokeObjectURL(result.url);
+    }
+  }
 
   let totalDuration = $derived(
     effectState.common.startDelay + effectState.common.duration + effectState.common.holdTime
+  );
+
+  let targetDimensions = $derived(
+    calculateCanvasDimensions(
+      canvasSettings.aspectRatio,
+      exportSettings.resolution,
+      renderer?.imageWidth || 1280,
+      renderer?.imageHeight || 720
+    )
   );
 
   let estimatedSize = $derived(
@@ -49,6 +79,58 @@
   let gifFrames = $derived(Math.ceil(totalDuration * exportSettings.fps));
   let isGifOverLimit = $derived(exportSettings.format === 'gif' && gifFrames > 150);
 
+  // 設定変更時のリアルタイム動的コーデック検証
+  $effect(() => {
+    if (!isOpen) return;
+
+    const w = targetDimensions.width;
+    const h = targetDimensions.height;
+    const fps = exportSettings.fps;
+
+    let isSubscribed = true;
+
+    async function check() {
+      if (exportSettings.format === 'gif' || exportSettings.format === 'png') {
+        if (isSubscribed) {
+          codecSupport.currentSupported = true;
+          codecSupport.errorReason = undefined;
+        }
+        return;
+      }
+
+      // MP4判定
+      const mp4Check = await checkVideoConfigSupported('mp4', w, h, fps);
+      // WebM判定
+      const webmCheck = await checkVideoConfigSupported('webm', w, h, fps);
+
+      if (!isSubscribed) return;
+
+      codecSupport.mp4Supported = mp4Check.supported;
+      codecSupport.webmSupported = webmCheck.supported;
+
+      if (exportSettings.format === 'mp4') {
+        codecSupport.currentSupported = mp4Check.supported;
+        codecSupport.errorReason = mp4Check.error;
+      } else if (exportSettings.format === 'webm') {
+        codecSupport.currentSupported = webmCheck.supported;
+        codecSupport.errorReason = webmCheck.error;
+      }
+    }
+
+    check();
+
+    return () => {
+      isSubscribed = false;
+    };
+  });
+
+  // モーダルクローズ時のBlob URL解放
+  function handleCloseModal() {
+    cleanupBlobUrl();
+    result = null;
+    onClose();
+  }
+
   // フォーマット切り替え時のfps自動調整
   function handleFormatChange(fmt: ExportFormat) {
     exportSettings.format = fmt;
@@ -59,6 +141,7 @@
 
   async function startExport() {
     if (!renderer) return;
+    cleanupBlobUrl();
     isExporting = true;
     progressPercent = 0;
     statusText = 'エクスポート準備中...';
@@ -137,7 +220,7 @@
           <span>🚀</span> エクスポート（書き出し）
         </h2>
         <button
-          onclick={onClose}
+          onclick={handleCloseModal}
           disabled={isExporting}
           style="background: transparent; border: none; color: #9ca3af; font-size: 1.25rem; cursor: pointer; padding: 0.2rem 0.5rem; line-height: 1;"
         >
@@ -152,15 +235,15 @@
           <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 0.4rem;">出力形式:</div>
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem;">
             {#each [
-              { id: 'mp4', label: 'MP4 (標準)', icon: '📹' },
-              { id: 'webm', label: 'WebM (Web)', icon: '🌐' },
-              { id: 'gif', label: 'GIF (アニメ)', icon: '🖼️' },
-              { id: 'png', label: 'PNG (静止画)', icon: '📷' }
+              { id: 'mp4', label: 'MP4 (標準)', icon: '📹', disabled: !codecSupport.mp4Supported },
+              { id: 'webm', label: 'WebM (Web)', icon: '🌐', disabled: !codecSupport.webmSupported },
+              { id: 'gif', label: 'GIF (アニメ)', icon: '🖼️', disabled: false },
+              { id: 'png', label: 'PNG (静止画)', icon: '📷', disabled: false }
             ] as f}
               <button
                 onclick={() => handleFormatChange(f.id as ExportFormat)}
-                disabled={isExporting}
-                style="padding: 0.5rem 0.2rem; background: {exportSettings.format === f.id ? '#2563eb' : '#111827'}; color: white; border: 1px solid {exportSettings.format === f.id ? '#60a5fa' : '#374151'}; border-radius: 6px; font-size: 0.75rem; cursor: pointer; text-align: center;"
+                disabled={isExporting || f.disabled}
+                style="padding: 0.5rem 0.2rem; background: {exportSettings.format === f.id ? '#2563eb' : '#111827'}; color: white; border: 1px solid {exportSettings.format === f.id ? '#60a5fa' : '#374151'}; border-radius: 6px; font-size: 0.75rem; cursor: {f.disabled ? 'not-allowed' : 'pointer'}; text-align: center; opacity: {f.disabled ? 0.35 : 1};"
               >
                 <div>{f.icon}</div>
                 <div style="font-weight: 600; margin-top: 0.2rem;">{f.label}</div>
@@ -235,6 +318,13 @@
           </div>
         </div>
 
+        <!-- コーデック非対応警告 -->
+        {#if !codecSupport.currentSupported && (exportSettings.format === 'mp4' || exportSettings.format === 'webm')}
+          <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 0.6rem; font-size: 0.75rem; color: #fca5a5;">
+            ⚠️ <strong>非対応設定:</strong> {codecSupport.errorReason || 'お使いの環境はこの設定での動画出力に対応していません。解像度やfpsを下げるか、WebM/GIFをお試しください。'}
+          </div>
+        {/if}
+
         <!-- GIF制限警告 -->
         {#if isGifOverLimit}
           <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 0.6rem; font-size: 0.75rem; color: #fca5a5;">
@@ -268,10 +358,11 @@
           </div>
         {:else}
           <!-- アクションボタン -->
+          {@const isActionDisabled = isGifOverLimit || !codecSupport.currentSupported}
           <button
             onclick={startExport}
-            disabled={isGifOverLimit}
-            style="width: 100%; padding: 0.75rem; background: {isGifOverLimit ? '#4b5563' : '#2563eb'}; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: {isGifOverLimit ? 'not-allowed' : 'pointer'}; display: flex; align-items: center; justify-content: center; gap: 0.4rem;"
+            disabled={isActionDisabled}
+            style="width: 100%; padding: 0.75rem; background: {isActionDisabled ? '#4b5563' : '#2563eb'}; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: {isActionDisabled ? 'not-allowed' : 'pointer'}; display: flex; align-items: center; justify-content: center; gap: 0.4rem;"
           >
             <span>🚀</span> {exportSettings.format.toUpperCase()} を生成する
           </button>
@@ -330,7 +421,7 @@
           </div>
 
           <button
-            onclick={() => { result = null; }}
+            onclick={() => { cleanupBlobUrl(); result = null; }}
             style="padding: 0.4rem; background: transparent; border: 1px solid #4b5563; color: #9ca3af; border-radius: 6px; font-size: 0.8rem; cursor: pointer;"
           >
             ← 設定に戻る

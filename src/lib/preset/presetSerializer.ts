@@ -27,7 +27,7 @@ export function createPresetFromState(
       fit: canvasSettings.fit,
       positionOffset: { ...canvasSettings.positionOffset },
       backgroundColor: canvasSettings.backgroundColor,
-      transparent: false,
+      transparent: Boolean(canvasSettings.transparent),
     },
     animation: {
       mode: effectState.mode,
@@ -91,7 +91,7 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
     throw new Error('プリセットに必須の設定項目（canvas または animation）が含まれていません。');
   }
 
-  // 必須フィールドの存在確認とフォールバック
+  // 必須フィールドの存在確認とフォールバック（0値の消失を防ぐため ?? を使用）
   const preset: AppRevealPreset = {
     schemaVersion: 1,
     id: parsed.id || `imported-${Date.now()}`,
@@ -104,26 +104,26 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
       aspectRatio: parsed.canvas.aspectRatio || '1:1',
       fit: parsed.canvas.fit || 'contain',
       positionOffset: {
-        x: Number(parsed.canvas.positionOffset?.x) || 0,
-        y: Number(parsed.canvas.positionOffset?.y) || 0,
+        x: Number(parsed.canvas.positionOffset?.x ?? 0),
+        y: Number(parsed.canvas.positionOffset?.y ?? 0),
       },
       backgroundColor: parsed.canvas.backgroundColor || '#000000',
       transparent: Boolean(parsed.canvas.transparent),
     },
     animation: {
       mode: parsed.animation.mode || 'radial_out',
-      duration: Math.max(0.5, Math.min(10.0, Number(parsed.animation.duration) || 3.0)),
-      startDelay: Math.max(0.0, Math.min(5.0, Number(parsed.animation.startDelay) || 0.5)),
-      holdTime: Math.max(0.0, Math.min(5.0, Number(parsed.animation.holdTime) || 1.0)),
-      mosaicSize: Math.max(4, Math.min(128, Number(parsed.animation.mosaicSize) || 48)),
-      feather: Math.max(0.0, Math.min(1.0, Number(parsed.animation.feather) || 0.15)),
+      duration: Math.max(0.5, Math.min(10.0, Number(parsed.animation.duration ?? 3.0))),
+      startDelay: Math.max(0.0, Math.min(5.0, Number(parsed.animation.startDelay ?? 0.5))),
+      holdTime: Math.max(0.0, Math.min(5.0, Number(parsed.animation.holdTime ?? 1.0))),
+      mosaicSize: Math.max(4, Math.min(128, Number(parsed.animation.mosaicSize ?? 48))),
+      feather: Math.max(0.0, Math.min(1.0, Number(parsed.animation.feather ?? 0.15))),
       easing: parsed.animation.easing || 'cubic',
       loop: parsed.animation.loop !== undefined ? Boolean(parsed.animation.loop) : true,
-      seed: Number(parsed.animation.seed) || 12345,
-      gridSize: parsed.animation.gridSize,
-      noiseStrength: parsed.animation.noiseStrength,
-      lodSteps: parsed.animation.lodSteps,
-      lodSmooth: parsed.animation.lodSmooth,
+      seed: Number(parsed.animation.seed ?? 12345),
+      gridSize: parsed.animation.gridSize !== undefined ? Number(parsed.animation.gridSize) : undefined,
+      noiseStrength: parsed.animation.noiseStrength !== undefined ? Number(parsed.animation.noiseStrength) : undefined,
+      lodSteps: parsed.animation.lodSteps !== undefined ? Number(parsed.animation.lodSteps) : undefined,
+      lodSmooth: parsed.animation.lodSmooth !== undefined ? Boolean(parsed.animation.lodSmooth) : undefined,
     },
     exportSettings: {
       resolutionPreset: parsed.exportSettings?.resolutionPreset || '720p',

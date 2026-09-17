@@ -125,3 +125,62 @@ export async function detectCapabilities(): Promise<SystemCapabilities> {
     recommendedVideoFormat,
   };
 }
+
+/**
+ * 指定された解像度・fps・フォーマットで VideoEncoder が対応しているかを動的に判定
+ */
+export async function checkVideoConfigSupported(
+  format: 'mp4' | 'webm',
+  width: number,
+  height: number,
+  fps: number
+): Promise<{ supported: boolean; codec: string; error?: string }> {
+  if (typeof window === 'undefined' || typeof window.VideoEncoder === 'undefined') {
+    return { supported: false, codec: '', error: 'VideoEncoder API未対応' };
+  }
+
+  const evenW = width - (width % 2);
+  const evenH = height - (height % 2);
+  const is1080pOrHigher = Math.max(evenW, evenH) >= 1080;
+  const isHighFps = fps >= 60;
+
+  let candidateCodecs: string[] = [];
+
+  if (format === 'mp4') {
+    if (is1080pOrHigher || isHighFps) {
+      candidateCodecs = ['avc1.64002a', 'avc1.4d0028', 'avc1.420028', 'avc1.42001f'];
+    } else {
+      candidateCodecs = ['avc1.42001f', 'avc1.4d0028', 'avc1.640028'];
+    }
+  } else {
+    // webm
+    if (is1080pOrHigher || isHighFps) {
+      candidateCodecs = ['vp09.00.40.08', 'vp09.00.31.08', 'vp09.00.10.08', 'vp8'];
+    } else {
+      candidateCodecs = ['vp09.00.10.08', 'vp09.00.31.08', 'vp8'];
+    }
+  }
+
+  for (const codec of candidateCodecs) {
+    try {
+      const res = await VideoEncoder.isConfigSupported({
+        codec,
+        width: evenW,
+        height: evenH,
+        bitrate: is1080pOrHigher ? 8_000_000 : 5_000_000,
+        framerate: fps,
+      });
+      if (res.supported) {
+        return { supported: true, codec };
+      }
+    } catch (e: any) {
+      // 候補を次へ
+    }
+  }
+
+  return {
+    supported: false,
+    codec: candidateCodecs[0],
+    error: `指定された設定 (${evenW}x${evenH} @ ${fps}fps) に対応するコーデックが見つかりません。`,
+  };
+}

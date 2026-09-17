@@ -123,13 +123,17 @@
         <input
           type="color"
           bind:value={settings.backgroundColor}
-          disabled={settings.fit === 'cover'}
-          style="width: 36px; height: 32px; border: none; border-radius: 4px; background: transparent; cursor: pointer;"
+          disabled={settings.fit === 'cover' || settings.transparent}
+          style="width: 36px; height: 32px; border: none; border-radius: 4px; background: transparent; cursor: pointer; opacity: {settings.transparent ? 0.4 : 1};"
         />
-        <span style="font-size: 0.8rem; font-family: monospace; color: {settings.fit === 'cover' ? '#6b7280' : '#e5e7eb'};">
-          {settings.backgroundColor}
+        <span style="font-size: 0.8rem; font-family: monospace; color: {settings.fit === 'cover' || settings.transparent ? '#6b7280' : '#e5e7eb'};">
+          {settings.transparent ? '透過' : settings.backgroundColor}
         </span>
       </div>
+      <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: #93c5fd; cursor: pointer; margin-top: 0.35rem;">
+        <input type="checkbox" bind:checked={settings.transparent} />
+        <span>透明背景 (PNG/GIF)</span>
+      </label>
     </div>
   </div>
 

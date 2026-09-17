@@ -27,12 +27,35 @@
   function randomizeSeed() {
     state.block.seed = Math.floor(Math.random() * 100000);
   }
+
+  function resetEffectParams() {
+    state.common.duration = 3.0;
+    state.common.startDelay = 0.5;
+    state.common.holdTime = 1.0;
+    state.common.mosaicSize = 48;
+    state.common.feather = 0.15;
+    state.common.easing = 'cubic';
+    state.block.gridCount = 16;
+    state.block.noiseStrength = 0.5;
+    state.block.seed = 12345;
+    state.lod.steps = 4;
+    state.lod.smooth = false;
+  }
 </script>
 
 <div style="background: #1f2937; border-radius: 8px; padding: 1rem; border: 1px solid #374151; display: flex; flex-direction: column; gap: 1rem;">
-  <h2 style="font-size: 0.95rem; font-weight: 600; margin: 0; color: #60a5fa; display: flex; align-items: center; gap: 0.4rem;">
-    <span>✨</span> 演出モード＆パラメータ
-  </h2>
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="font-size: 0.95rem; font-weight: 600; margin: 0; color: #60a5fa; display: flex; align-items: center; gap: 0.4rem;">
+      <span>✨</span> 演出モード＆パラメータ
+    </h2>
+    <button
+      onclick={resetEffectParams}
+      style="padding: 0.2rem 0.6rem; background: #374151; color: #d1d5db; border: 1px solid #4b5563; border-radius: 4px; font-size: 0.75rem; cursor: pointer;"
+      title="演出パラメータを初期値にリセット"
+    >
+      演出リセット
+    </button>
+  </div>
 
   <!-- 6演出モード選択グリッド -->
   <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
