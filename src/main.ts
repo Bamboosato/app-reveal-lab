@@ -2,14 +2,20 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import { registerSW } from 'virtual:pwa-register';
 
-// PWA Service Worker 自動登録
-registerSW({
+// PWA Service Worker 自動登録 & 更新イベントディスパッチ
+const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('New content available, please refresh.');
+    window.dispatchEvent(
+      new CustomEvent('pwa-need-refresh', {
+        detail: {
+          updateSW: (reloadPage?: boolean) => updateSW(reloadPage),
+        },
+      })
+    );
   },
   onOfflineReady() {
-    console.log('App ready to work offline.');
+    window.dispatchEvent(new CustomEvent('pwa-offline-ready'));
   },
 });
 

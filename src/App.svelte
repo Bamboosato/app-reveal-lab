@@ -56,16 +56,33 @@
     gifPaletteMode: 'per-frame',
   });
 
+  interface ToastData {
+    message: string;
+    type: 'warning' | 'info' | 'success' | 'update';
+    actionText?: string;
+    onAction?: () => void;
+  }
+
   // トースト通知状態
-  let toastMessage = $state<string | null>(null);
+  let toast = $state<ToastData | null>(null);
   let toastTimer: any = null;
 
-  function showToast(msg: string) {
-    toastMessage = msg;
+  function showToast(msg: string, type: 'warning' | 'info' | 'success' = 'warning') {
     if (toastTimer) clearTimeout(toastTimer);
+    toast = { message: msg, type };
     toastTimer = setTimeout(() => {
-      toastMessage = null;
+      toast = null;
     }, 4000);
+  }
+
+  function showUpdateToast(onUpdate: () => void) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toast = {
+      message: '新しいバージョンが利用可能です。',
+      type: 'update',
+      actionText: '再読み込み',
+      onAction: onUpdate,
+    };
   }
 
   // エクスポートモーダル状態
@@ -163,12 +180,37 @@
       }
     }
 
+    // PWA更新・オフライン準備イベントリスナー
+    const handlePwaNeedRefresh = (e: Event) => {
+      const customEvent = e as CustomEvent<{ updateSW: (reload?: boolean) => Promise<void> }>;
+      showUpdateToast(async () => {
+        if (customEvent.detail?.updateSW) {
+          await customEvent.detail.updateSW(true);
+        } else {
+          window.location.reload();
+        }
+      });
+    };
+
+    const handlePwaOfflineReady = () => {
+      showToast('オフラインで使用可能になりました。', 'success');
+    };
+
+    // prefers-reduced-motion 配慮: OSのアニメーション低減設定が有効な場合はループをオフ
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      effectState.common.loop = false;
+    }
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('paste', handlePaste);
+    window.addEventListener('pwa-need-refresh', handlePwaNeedRefresh);
+    window.addEventListener('pwa-offline-ready', handlePwaOfflineReady);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('paste', handlePaste);
+      window.removeEventListener('pwa-need-refresh', handlePwaNeedRefresh);
+      window.removeEventListener('pwa-offline-ready', handlePwaOfflineReady);
       if (animFrameId) cancelAnimationFrame(animFrameId);
       renderer?.dispose();
     };
@@ -403,13 +445,25 @@
   />
 
   <!-- トースト通知 -->
-  {#if toastMessage}
-    <div style="position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: #f59e0b; border: 1px solid #f59e0b; padding: 0.75rem 1.25rem; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); z-index: 100; font-size: 0.85rem; display: flex; align-items: center; gap: 0.6rem;">
-      <span>⚠️</span>
-      <span>{toastMessage}</span>
+  {#if toast}
+    <div
+      role="status"
+      style="position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: {toast.type === 'warning' ? '#f59e0b' : toast.type === 'success' ? '#10b981' : '#60a5fa'}; border: 1px solid {toast.type === 'warning' ? '#f59e0b' : toast.type === 'success' ? '#10b981' : '#3b82f6'}; padding: 0.75rem 1.25rem; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); z-index: 100; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem;"
+    >
+      <span>{toast.type === 'warning' ? '⚠️' : toast.type === 'success' ? '✅' : '🚀'}</span>
+      <span>{toast.message}</span>
+      {#if toast.actionText && toast.onAction}
+        <button
+          onclick={toast.onAction}
+          style="background: #3b82f6; color: white; border: none; padding: 0.3rem 0.65rem; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.8rem;"
+        >
+          {toast.actionText}
+        </button>
+      {/if}
       <button
-        onclick={() => { toastMessage = null; }}
-        style="background: transparent; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem; margin-left: 0.5rem; line-height: 1;"
+        onclick={() => { toast = null; }}
+        style="background: transparent; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem; margin-left: 0.25rem; line-height: 1;"
+        title="閉じる"
       >
         ✕
       </button>

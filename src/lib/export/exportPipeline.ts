@@ -93,8 +93,14 @@ export class ExportPipeline {
 
       // --- A. PNG静止画出力 ---
       if (exportSettings.format === 'png') {
+        if (this.canceled) {
+          throw new Error('エクスポート処理がキャンセルされました。');
+        }
         onProgress?.(50, 1, 1, 'PNG静止画をレンダリング中...');
         const blob = await renderer.capturePNG(effectState, canvasSettings);
+        if (this.canceled) {
+          throw new Error('エクスポート処理がキャンセルされました。');
+        }
         const url = URL.createObjectURL(blob);
         const elapsedTimeMs = Math.round(performance.now() - startTime);
 
@@ -152,6 +158,14 @@ export class ExportPipeline {
               }
             } else if (msg.type === 'finished') {
               this.gifReject = null;
+              if (this.canceled) {
+                if (this.worker) {
+                  this.worker.terminate();
+                  this.worker = null;
+                }
+                reject(new Error('エクスポート処理がキャンセルされました。'));
+                return;
+              }
               const elapsedTimeMs = Math.round(performance.now() - startTime);
               const blob = new Blob([msg.buffer], { type: 'image/gif' });
               const url = URL.createObjectURL(blob);
@@ -251,6 +265,10 @@ export class ExportPipeline {
 
       onProgress?.(99, totalFrames, totalFrames, 'メタデータを書き込み中...');
       await this.output.finalize();
+
+      if (this.canceled) {
+        throw new Error('エクスポート処理がキャンセルされました。');
+      }
 
       const elapsedTimeMs = Math.round(performance.now() - startTime);
       const realtimeRatio = Number((elapsedTimeMs / (totalDuration * 1000)).toFixed(2));

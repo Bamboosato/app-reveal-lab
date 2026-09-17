@@ -87,6 +87,15 @@ function parseFiniteNumber(val: any, fallback: number, min?: number, max?: numbe
   return clamped;
 }
 
+function parseStrictBoolean(val: any, fallback: boolean): boolean;
+function parseStrictBoolean(val: any, fallback: undefined): boolean | undefined;
+function parseStrictBoolean(val: any, fallback?: boolean): boolean | undefined {
+  if (typeof val === 'boolean') return val;
+  if (val === 'true' || val === 1) return true;
+  if (val === 'false' || val === 0) return false;
+  return fallback;
+}
+
 /**
  * インポートされたJSON文字列をパースし、スキーマを検証
  */
@@ -129,7 +138,7 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
       backgroundColor: typeof parsed.canvas.backgroundColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(parsed.canvas.backgroundColor)
         ? parsed.canvas.backgroundColor
         : '#000000',
-      transparent: Boolean(parsed.canvas.transparent),
+      transparent: parseStrictBoolean(parsed.canvas.transparent, false),
     },
     animation: {
       mode: VALID_EFFECT_MODES.includes(parsed.animation.mode) ? parsed.animation.mode : 'radial_out',
@@ -139,12 +148,12 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
       mosaicSize: Math.round(parseFiniteNumber(parsed.animation.mosaicSize, 48, 4, 128)),
       feather: parseFiniteNumber(parsed.animation.feather, 0.15, 0.0, 1.0),
       easing: VALID_EASINGS.includes(parsed.animation.easing) ? parsed.animation.easing : 'cubic',
-      loop: parsed.animation.loop !== undefined ? Boolean(parsed.animation.loop) : true,
+      loop: parseStrictBoolean(parsed.animation.loop, true),
       seed: Math.round(parseFiniteNumber(parsed.animation.seed, 12345, 0, 999999)),
       gridSize: parsed.animation.gridSize !== undefined ? Math.round(parseFiniteNumber(parsed.animation.gridSize, 16, 4, 64)) : undefined,
       noiseStrength: parsed.animation.noiseStrength !== undefined ? parseFiniteNumber(parsed.animation.noiseStrength, 0.5, 0.0, 1.0) : undefined,
       lodSteps: parsed.animation.lodSteps !== undefined ? Math.round(parseFiniteNumber(parsed.animation.lodSteps, 4, 2, 8)) : undefined,
-      lodSmooth: parsed.animation.lodSmooth !== undefined ? Boolean(parsed.animation.lodSmooth) : undefined,
+      lodSmooth: parsed.animation.lodSmooth !== undefined ? parseStrictBoolean(parsed.animation.lodSmooth, undefined) : undefined,
     },
     exportSettings: {
       resolutionPreset: VALID_RESOLUTIONS.includes(parsed.exportSettings?.resolutionPreset) ? parsed.exportSettings.resolutionPreset : '720p',
