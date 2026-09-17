@@ -77,7 +77,7 @@ vec2 canvasToImageUv(vec2 cUv, float canvasAspect, float imageAspect) {
 // 段階的ランダム解像 (Staged Reveal) 用サンプリング関数
 // localProgress (0.0=初期モザイク, 1.0=完全原画) とブロック固有乱数から段階的なモザイク色を算出
 vec4 sampleStagedColor(vec2 cUv, float localProgress, float rnd, float canvasAspect, float imageAspect) {
-  if (localProgress >= 1.0) {
+  if (localProgress >= 0.98) {
     return texture(u_texture, canvasToImageUv(cUv, canvasAspect, imageAspect));
   }
   if (localProgress <= 0.0) {
@@ -88,8 +88,9 @@ vec4 sampleStagedColor(vec2 cUv, float localProgress, float rnd, float canvasAsp
 
   // ブロック固有のランダムな段階数 (3 〜 6 段階)
   float steps = floor(3.0 + 4.0 * rnd);
-  float stepIdx = floor(clamp(localProgress, 0.0, 0.9999) * steps);
-  float t = stepIdx / max(1.0, steps - 1.0);
+  // 0.98 まで各モザイク段階を均等に持続させ、早期に原画になりすぎないよう調整
+  float stepIdx = floor((localProgress / 0.98) * steps);
+  float t = clamp(stepIdx / max(1.0, steps), 0.0, 1.0);
 
   // 初期モザイクサイズから 1.0px へ指数関数的に縮小
   float bSize = max(1.0, u_mosaicSize * pow(1.0 / u_mosaicSize, t));
@@ -152,8 +153,9 @@ void main() {
     if (u_stagedReveal == 1) {
       vec2 blockCoord = floor(canvasUv * vec2(u_gridCount * canvasAspect, u_gridCount));
       float rnd = hash21(blockCoord, u_seed);
-      float band = max(0.1, feather * 2.0);
-      float localProg = clamp((currentRadius - dist) / band + (rnd - 0.5) * 0.2, 0.0, 1.0);
+      float band = max(0.12, feather * 1.5);
+      // 四隅(dist=maxDist)の解像完了が u_progress=1.0 に揃うよう配分
+      float localProg = clamp((u_progress * (maxDist + band) - dist) / band + (rnd - 0.5) * 0.1, 0.0, 1.0);
       fragColor = sampleStagedColor(canvasUv, localProg, rnd, canvasAspect, imageAspect);
       return;
     }
@@ -171,8 +173,9 @@ void main() {
     if (u_stagedReveal == 1) {
       vec2 blockCoord = floor(canvasUv * vec2(u_gridCount * canvasAspect, u_gridCount));
       float rnd = hash21(blockCoord, u_seed);
-      float band = max(0.1, feather * 2.0);
-      float localProg = clamp((dist - (currentRadius - feather)) / band + (rnd - 0.5) * 0.2, 0.0, 1.0);
+      float band = max(0.12, feather * 1.5);
+      // 中心(dist=0)の解像完了が u_progress=1.0 に揃うよう配分
+      float localProg = clamp((dist - (currentRadius - feather)) / band + (rnd - 0.5) * 0.1, 0.0, 1.0);
       fragColor = sampleStagedColor(canvasUv, localProg, rnd, canvasAspect, imageAspect);
       return;
     }
@@ -186,8 +189,9 @@ void main() {
     if (u_stagedReveal == 1) {
       vec2 blockCoord = floor(canvasUv * vec2(u_gridCount * canvasAspect, u_gridCount));
       float rnd = hash21(blockCoord, u_seed);
-      float band = max(0.1, feather * 2.0);
-      float localProg = clamp((currentY - canvasUv.y) / band + (rnd - 0.5) * 0.2, 0.0, 1.0);
+      float band = max(0.12, feather * 1.5);
+      // 下端(y=1.0)の解像完了が u_progress=1.0 に揃うよう配分
+      float localProg = clamp((u_progress * (1.0 + band) - canvasUv.y) / band + (rnd - 0.5) * 0.1, 0.0, 1.0);
       fragColor = sampleStagedColor(canvasUv, localProg, rnd, canvasAspect, imageAspect);
       return;
     }
@@ -202,12 +206,13 @@ void main() {
     // 行ベースの進行 (最上行0.0 -> 最下行1.0)
     float rowProgress = blockCoord.y / max(1.0, u_gridCount - 1.0);
     // 進行境界付近に乱数による先行出現オフセット
-    float noiseOffset = (rnd - 0.5) * u_noiseStrength * 0.4;
-    float effectiveRowProgress = rowProgress + noiseOffset;
+    float noiseOffset = (rnd - 0.5) * u_noiseStrength * 0.3;
+    float effectiveRowProgress = clamp(rowProgress + noiseOffset, 0.0, 1.0);
 
     if (u_stagedReveal == 1) {
-      float tStart = effectiveRowProgress * 0.8;
-      float span = 0.25;
+      // 最下行のブロック完了が u_progress=1.0 になるよう配分
+      float tStart = effectiveRowProgress * 0.75;
+      float span = max(0.12, 1.0 - tStart);
       float localProg = clamp((u_progress - tStart) / span, 0.0, 1.0);
       fragColor = sampleStagedColor(canvasUv, localProg, rnd, canvasAspect, imageAspect);
       return;
@@ -222,8 +227,9 @@ void main() {
 
     if (u_stagedReveal == 1) {
       float rnd2 = hash21(blockCoord + vec2(17.3, 31.7), u_seed);
-      float tStart = rnd * 0.65;
-      float span = 0.2 + 0.15 * rnd2;
+      // 各ブロックの解像完了が 0.95〜1.00 まで分散するように配分
+      float tStart = rnd * 0.75;
+      float span = max(0.12, (1.0 - tStart) * (0.65 + 0.35 * rnd2));
       float localProg = clamp((u_progress - tStart) / span, 0.0, 1.0);
       fragColor = sampleStagedColor(canvasUv, localProg, rnd2, canvasAspect, imageAspect);
       return;
@@ -241,9 +247,9 @@ void main() {
     float steps = float(max(2, u_lodSteps));
 
     if (u_lodSmooth == 0) {
-      // 階段状（Stepped）
-      float stepIdx = floor(clamp(u_progress, 0.0, 0.9999) * steps);
-      float t = stepIdx / (steps - 1.0);
+      // 階段状（Stepped）: 最終原画への到達を u_progress=1.0 の直前まで持続させる
+      float stepIdx = floor(clamp(u_progress, 0.0, 0.9999) * (steps - 1.0));
+      float t = stepIdx / max(1.0, steps - 1.0);
       float lodBlockSize = max(1.0, u_mosaicSize * pow(1.0 / u_mosaicSize, t));
       if (lodBlockSize <= 1.5) {
         fragColor = fullResColor;
@@ -255,7 +261,7 @@ void main() {
       return;
     } else {
       // 連続フェード（Smooth）
-      float p = clamp(u_progress, 0.0, 0.9999) * (steps - 1.0);
+      float p = clamp(u_progress, 0.0, 1.0) * (steps - 1.0);
       float currentStep = floor(p);
       float nextStep = min(steps - 1.0, currentStep + 1.0);
       float stepFrac = fract(p);
