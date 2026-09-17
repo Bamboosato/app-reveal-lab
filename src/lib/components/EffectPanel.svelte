@@ -17,11 +17,11 @@
   ];
 
   const easings: { id: EasingType; label: string }[] = [
-    { id: 'cubic', label: 'Cubic EaseInOut (推奨)' },
+    { id: 'easeOut', label: 'EaseOut (徐々に減速・推奨)' },
+    { id: 'cubic', label: 'Cubic EaseInOut' },
     { id: 'easeInOut', label: 'Quad EaseInOut' },
-    { id: 'easeOut', label: 'EaseOut' },
-    { id: 'easeIn', label: 'EaseIn' },
-    { id: 'linear', label: 'Linear' },
+    { id: 'easeIn', label: 'EaseIn (加速)' },
+    { id: 'linear', label: 'Linear (等速)' },
   ];
 
   function randomizeSeed() {
@@ -29,16 +29,18 @@
   }
 
   function resetEffectParams() {
-    state.common.duration = 3.0;
+    state.common.duration = 6.0;
     state.common.startDelay = 0.5;
-    state.common.holdTime = 1.0;
-    state.common.mosaicSize = 48;
+    state.common.holdTime = 1.5;
+    state.common.mosaicSize = 64;
     state.common.feather = 0.15;
-    state.common.easing = 'cubic';
+    state.common.easing = 'easeOut';
+    state.common.loop = false;
+    state.common.stagedReveal = true;
     state.block.gridCount = 16;
     state.block.noiseStrength = 0.5;
     state.block.seed = 12345;
-    state.lod.steps = 4;
+    state.lod.steps = 6;
     state.lod.smooth = false;
   }
 </script>

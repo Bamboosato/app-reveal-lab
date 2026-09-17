@@ -27,13 +27,13 @@
     return {
       mode: 'radial_out',
       common: {
-        duration: 3.0,
+        duration: 6.0,
         startDelay: 0.5,
-        holdTime: 1.0,
-        mosaicSize: 48,
+        holdTime: 1.5,
+        mosaicSize: 64,
         feather: 0.15,
-        easing: 'cubic',
-        loop: true,
+        easing: 'easeOut',
+        loop: false,
         stagedReveal: true,
       },
       block: {
@@ -42,7 +42,7 @@
         seed: 12345,
       },
       lod: {
-        steps: 4,
+        steps: 6,
         smooth: false,
       },
     };
