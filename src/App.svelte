@@ -313,7 +313,7 @@
         format: preset.exportSettings.format,
         resolution: preset.exportSettings.resolutionPreset,
         fps: preset.exportSettings.fps,
-        gifPaletteMode: preset.exportSettings.gifPaletteMode,
+        gifPaletteMode: preset.exportSettings.gifPaletteMode ?? 'per-frame',
       };
     }
     currentTime = 0;
@@ -383,7 +383,7 @@
 
   <!-- エクスポートモーダル -->
   <ExportModal
-    bind:isOpen={isExportModalOpen}
+    isOpen={isExportModalOpen}
     bind:exportSettings
     {renderer}
     {effectState}

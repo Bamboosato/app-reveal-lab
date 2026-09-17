@@ -46,7 +46,7 @@
     }
   });
 
-  async function handleSaveNewPreset() {
+  async function handleSaveCurrent() {
     if (!newPresetName.trim()) {
       errorMessage = 'プリセット名を入力してください。';
       return;

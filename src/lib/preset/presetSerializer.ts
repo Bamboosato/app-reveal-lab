@@ -76,6 +76,8 @@ const VALID_RESOLUTIONS = ['720p', '1080p'] as const;
 const VALID_FORMATS = ['mp4', 'webm', 'gif', 'png'] as const;
 const VALID_PALETTE_MODES = ['per-frame', 'global'] as const;
 
+const VALID_FPS = [15, 24, 30, 60] as const;
+
 function parseFiniteNumber(val: any, fallback: number, min?: number, max?: number): number {
   const n = typeof val === 'number' ? val : Number(val);
   if (!Number.isFinite(n)) return fallback;
@@ -146,7 +148,7 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
     },
     exportSettings: {
       resolutionPreset: VALID_RESOLUTIONS.includes(parsed.exportSettings?.resolutionPreset) ? parsed.exportSettings.resolutionPreset : '720p',
-      fps: parseFiniteNumber(parsed.exportSettings?.fps, 30, 10, 60),
+      fps: VALID_FPS.includes(Number(parsed.exportSettings?.fps) as any) ? (Number(parsed.exportSettings.fps) as (15 | 24 | 30 | 60)) : 30,
       format: VALID_FORMATS.includes(parsed.exportSettings?.format) ? parsed.exportSettings.format : 'mp4',
       gifPaletteMode: VALID_PALETTE_MODES.includes(parsed.exportSettings?.gifPaletteMode) ? parsed.exportSettings.gifPaletteMode : 'per-frame',
     },
