@@ -33,25 +33,74 @@
 
   let containerEl = $state<HTMLDivElement | null>(null);
   let isFullscreen = $state(false);
+  let isNativeFullscreen = false;
 
-  // フルスクリーン状態の検知
+  // フルスクリーン状態の検知 (Native)
   $effect(() => {
     const handleFullscreenChange = () => {
-      isFullscreen = document.fullscreenElement === containerEl;
+      const fsEl =
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement;
+      if (!fsEl && isNativeFullscreen) {
+        isFullscreen = false;
+        isNativeFullscreen = false;
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
   });
 
-  // フルスクリーン切り替え
-  function toggleFullScreen() {
-    if (!containerEl) return;
-    if (!document.fullscreenElement) {
-      containerEl.requestFullscreen().catch((err) => alert(err.message));
+  // 全画面時の背景スクロール防止
+  $effect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
     } else {
-      document.exitFullscreen();
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  });
+
+  // フルスクリーン切り替え (Native + CSS Fallback for iPhone/iOS)
+  async function toggleFullScreen() {
+    if (!containerEl) return;
+
+    if (isFullscreen) {
+      if (isNativeFullscreen) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen().catch(() => {});
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+        isNativeFullscreen = false;
+      }
+      isFullscreen = false;
+      return;
+    }
+
+    const req =
+      containerEl.requestFullscreen ||
+      (containerEl as any).webkitRequestFullscreen;
+
+    if (typeof req === 'function') {
+      try {
+        await req.call(containerEl);
+        isNativeFullscreen = true;
+        isFullscreen = true;
+      } catch {
+        // iOS や制限環境では CSS 疑似全画面へフォールバック
+        isNativeFullscreen = false;
+        isFullscreen = true;
+      }
+    } else {
+      // iPhone Safari / iPhone Chrome など、Element.requestFullscreen が存在しない環境
+      isNativeFullscreen = false;
+      isFullscreen = true;
     }
   }
 
@@ -69,7 +118,7 @@
 <div
   bind:this={containerEl}
   style="{isFullscreen
-    ? 'position: fixed; inset: 0; width: 100vw; height: 100vh; background: #030712; padding: 1.5rem; z-index: 9999; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: 1rem;'
+    ? 'position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; background: #030712; padding: max(0.75rem, env(safe-area-inset-top, 0.75rem)) max(0.75rem, env(safe-area-inset-right, 0.75rem)) max(0.75rem, env(safe-area-inset-bottom, 0.75rem)) max(0.75rem, env(safe-area-inset-left, 0.75rem)); z-index: 99999; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: 0.75rem;'
     : 'background: #1f2937; border-radius: 8px; padding: 1rem; border: 1px solid #374151; display: flex; flex-direction: column; gap: 0.75rem;'}"
 >
   <!-- プレビューヘッダー情報 -->
@@ -81,16 +130,20 @@
       </span>
       {#if isFullscreen}
         <span style="background: #2563eb; color: white; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.7rem;">
-          全画面モード (Escで終了)
+          全画面表示中
         </span>
       {/if}
     </div>
     <button
       onclick={toggleFullScreen}
       title={isFullscreen ? '全画面表示を終了' : '全画面表示'}
-      style="background: {isFullscreen ? '#374151' : 'transparent'}; border: none; color: #e5e7eb; cursor: pointer; font-size: 1.1rem; padding: 0.2rem 0.5rem; border-radius: 4px;"
+      style="background: {isFullscreen ? '#2563eb' : '#374151'}; border: {isFullscreen ? '1px solid #60a5fa' : '1px solid #4b5563'}; color: #e5e7eb; cursor: pointer; font-size: {isFullscreen ? '0.75rem' : '1.05rem'}; padding: {isFullscreen ? '0.3rem 0.6rem' : '0.2rem 0.5rem'}; border-radius: 6px; font-weight: 600; display: flex; align-items: center; gap: 0.3rem;"
     >
-      {isFullscreen ? '🗗' : '⛶'}
+      {#if isFullscreen}
+        <span>✕</span> 終了
+      {:else}
+        <span>⛶</span>
+      {/if}
     </button>
   </div>
 
