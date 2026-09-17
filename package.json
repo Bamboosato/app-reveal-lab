@@ -1,0 +1,26 @@
+{
+  "name": "app-reveal-lab-spike",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "idb-keyval": "^6.3.0",
+    "mediabunny": "^1.0.0",
+    "twgl.js": "^5.5.4",
+    "vite-plugin-pwa": "^1.3.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.19.0",
+    "svelte-check": "^4.1.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
