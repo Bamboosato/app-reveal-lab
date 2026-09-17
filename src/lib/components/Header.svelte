@@ -22,9 +22,6 @@
           <h1 style="font-size: 1.35rem; font-weight: 700; margin: 0; color: #60a5fa; letter-spacing: -0.02em;">
             App Reveal Lab
           </h1>
-          <span style="font-size: 0.7rem; background: #2563eb; color: white; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 600;">
-            MVP-3
-          </span>
         </div>
         <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.1rem 0 0;">
           プログレッシブ画像トランジション・スタジオ
