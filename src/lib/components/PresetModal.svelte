@@ -4,16 +4,18 @@
   import { getAllPresets, saveCustomPreset, deleteCustomPreset } from '../preset/presetStorage';
   import { createPresetFromState, exportPresetAsJSON, parseAndValidatePresetJSON } from '../preset/presetSerializer';
   import type { CanvasSettings, EffectState } from '../core/types';
+  import type { ExportSettings } from '../export/exportTypes';
 
   interface Props {
     isOpen: boolean;
     canvasSettings: CanvasSettings;
     effectState: EffectState;
+    exportSettings?: ExportSettings;
     onClose: () => void;
     onApplyPreset: (preset: AppRevealPreset) => void;
   }
 
-  let { isOpen, canvasSettings, effectState, onClose, onApplyPreset }: Props = $props();
+  let { isOpen, canvasSettings, effectState, exportSettings, onClose, onApplyPreset }: Props = $props();
 
   let activeTab = $state<'builtin' | 'custom'>('builtin');
   let builtinPresets = $state<AppRevealPreset[]>([]);
@@ -44,7 +46,7 @@
     }
   });
 
-  async function handleSaveCurrent() {
+  async function handleSaveNewPreset() {
     if (!newPresetName.trim()) {
       errorMessage = 'プリセット名を入力してください。';
       return;
@@ -55,7 +57,7 @@
         newPresetName,
         canvasSettings,
         effectState,
-        undefined,
+        exportSettings,
         newPresetDesc
       );
       await saveCustomPreset(preset);

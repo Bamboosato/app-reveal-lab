@@ -18,16 +18,30 @@ export class ExportPipeline {
   private canceled = false;
   private worker: Worker | null = null;
   private onFrameDoneCallback: (() => void) | null = null;
+  private gifReject: ((reason?: any) => void) | null = null;
+  private output: Output | null = null;
 
-  public cancel(): void {
+  public async cancel(): Promise<void> {
     this.canceled = true;
     if (this.onFrameDoneCallback) {
       this.onFrameDoneCallback();
       this.onFrameDoneCallback = null;
     }
+    if (this.gifReject) {
+      this.gifReject(new Error('エクスポート処理がキャンセルされました。'));
+      this.gifReject = null;
+    }
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
+    }
+    if (this.output) {
+      try {
+        await this.output.cancel();
+      } catch {
+        // すでにキャンセルまたは終了済みの場合は無視
+      }
+      this.output = null;
     }
   }
 
@@ -36,9 +50,11 @@ export class ExportPipeline {
     effectState: EffectState,
     canvasSettings: CanvasSettings,
     exportSettings: ExportSettings,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    currentPreviewTime: number = 0
   ): Promise<ExportResult> {
     this.canceled = false;
+    this.output = null;
     const startTime = performance.now();
 
     // プレビュー元の寸法を保存し、完了時/失敗時に必ず復元する
@@ -113,6 +129,7 @@ export class ExportPipeline {
         this.worker = new Worker(new URL('../spike/gifWorker.ts', import.meta.url), { type: 'module' });
 
         return await new Promise<ExportResult>((resolve, reject) => {
+          this.gifReject = reject;
           if (!this.worker) return reject(new Error('Failed to start Web Worker'));
 
           this.worker.onmessage = async (e: MessageEvent) => {
@@ -121,7 +138,7 @@ export class ExportPipeline {
               try {
                 await this.processGifFrames(renderer, effectState, canvasSettings, totalFrames, totalDuration, dt, width, height, onProgress);
               } catch (err) {
-                this.cancel();
+                await this.cancel();
                 reject(err);
               }
             } else if (msg.type === 'progress') {
@@ -134,6 +151,7 @@ export class ExportPipeline {
                 cb();
               }
             } else if (msg.type === 'finished') {
+              this.gifReject = null;
               const elapsedTimeMs = Math.round(performance.now() - startTime);
               const blob = new Blob([msg.buffer], { type: 'image/gif' });
               const url = URL.createObjectURL(blob);
@@ -189,19 +207,27 @@ export class ExportPipeline {
 
       const target = new BufferTarget();
       const outputFormat = isMp4 ? new Mp4OutputFormat() : new WebMOutputFormat();
-      const output = new Output({
+      this.output = new Output({
         format: outputFormat,
         target,
       });
 
-      const codecName = isMp4 ? 'avc' : 'vp9';
+      // 能力判定結果から正確にコーデックを選択し、fullCodecString も CanvasSource に伝達
+      let codecName: 'avc' | 'vp9' | 'vp8';
+      if (isMp4) {
+        codecName = 'avc';
+      } else {
+        codecName = cap.codec === 'vp8' ? 'vp8' : 'vp9';
+      }
+
       const videoSource = new CanvasSource(renderer.canvas, {
         codec: codecName,
+        fullCodecString: cap.codec,
         quality: QUALITY_HIGH,
       });
 
-      output.addVideoTrack(videoSource);
-      await output.start();
+      this.output.addVideoTrack(videoSource);
+      await this.output.start();
 
       for (let frame = 0; frame < totalFrames; frame++) {
         if (this.canceled) {
@@ -219,8 +245,12 @@ export class ExportPipeline {
         onProgress?.(percent, frame + 1, totalFrames, `${isMp4 ? 'MP4' : 'WebM'} エンコード中: ${percent}% (${frame + 1}/${totalFrames})`);
       }
 
+      if (this.canceled) {
+        throw new Error('エクスポート処理がキャンセルされました。');
+      }
+
       onProgress?.(99, totalFrames, totalFrames, 'メタデータを書き込み中...');
-      await output.finalize();
+      await this.output.finalize();
 
       const elapsedTimeMs = Math.round(performance.now() - startTime);
       const realtimeRatio = Number((elapsedTimeMs / (totalDuration * 1000)).toFixed(2));
@@ -247,8 +277,10 @@ export class ExportPipeline {
         height,
       };
     } finally {
-      // プレビュー表示用の元寸法に確実に復帰
+      // プレビュー表示用の元寸法に確実に復帰し、停止中のプレビューが空になるのを防止
       renderer.resize(origWidth, origHeight);
+      renderer.renderAtTime(currentPreviewTime, effectState, canvasSettings);
+      this.output = null;
     }
   }
 

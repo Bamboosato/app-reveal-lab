@@ -9,6 +9,7 @@
   import { RevealRenderer } from './lib/core/renderer';
   import { calculateCanvasDimensions, generateSampleImage, loadImageFromFile } from './lib/core/imageLoader';
   import type { CanvasSettings, EffectState, ResolutionDimension } from './lib/core/types';
+  import type { ExportSettings } from './lib/export/exportTypes';
   import type { AppRevealPreset } from './lib/preset/presetTypes';
 
   // 1. キャンバス初期設定
@@ -48,6 +49,24 @@
 
   let canvasSettings = $state<CanvasSettings>(getDefaultCanvasSettings());
   let effectState = $state<EffectState>(getDefaultEffectState());
+  let exportSettings = $state<ExportSettings>({
+    format: 'mp4',
+    resolution: '720p',
+    fps: 30,
+    gifPaletteMode: 'per-frame',
+  });
+
+  // トースト通知状態
+  let toastMessage = $state<string | null>(null);
+  let toastTimer: any = null;
+
+  function showToast(msg: string) {
+    toastMessage = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastMessage = null;
+    }, 4000);
+  }
 
   // エクスポートモーダル状態
   let isExportModalOpen = $state(false);
@@ -133,7 +152,7 @@
           if (file) {
             e.preventDefault();
             try {
-              const img = await loadImageFromFile(file);
+              const img = await loadImageFromFile(file, (msg) => showToast(msg));
               handleUpdateImage(img);
             } catch (err: any) {
               alert('クリップボード画像の読み込みに失敗しました: ' + err.message);
@@ -245,6 +264,12 @@
     pausePlayback();
     canvasSettings = getDefaultCanvasSettings();
     effectState = getDefaultEffectState();
+    exportSettings = {
+      format: 'mp4',
+      resolution: '720p',
+      fps: 30,
+      gifPaletteMode: 'per-frame',
+    };
     currentTime = 0;
     handleResetToSample();
   }
@@ -260,7 +285,7 @@
       backgroundColor: preset.canvas.backgroundColor,
       transparent: Boolean(preset.canvas.transparent),
     };
-    // 2. 演出設定
+    // 2. 演出設定（0値消失防止のため ?? を使用）
     effectState = {
       mode: preset.animation.mode,
       common: {
@@ -273,15 +298,24 @@
         loop: preset.animation.loop,
       },
       block: {
-        gridCount: preset.animation.gridSize || 16,
-        noiseStrength: preset.animation.noiseStrength || 0.5,
+        gridCount: preset.animation.gridSize ?? 16,
+        noiseStrength: preset.animation.noiseStrength ?? 0.5,
         seed: preset.animation.seed,
       },
       lod: {
-        steps: preset.animation.lodSteps || 4,
-        smooth: preset.animation.lodSmooth || false,
+        steps: preset.animation.lodSteps ?? 4,
+        smooth: preset.animation.lodSmooth ?? false,
       },
     };
+    // 3. 出力設定の反映（プリセット往復）
+    if (preset.exportSettings) {
+      exportSettings = {
+        format: preset.exportSettings.format,
+        resolution: preset.exportSettings.resolutionPreset,
+        fps: preset.exportSettings.fps,
+        gifPaletteMode: preset.exportSettings.gifPaletteMode,
+      };
+    }
     currentTime = 0;
     renderCurrentFrame();
   }
@@ -339,6 +373,7 @@
         bind:settings={canvasSettings}
         onUpdateImage={handleUpdateImage}
         onResetToSample={handleResetToSample}
+        onWarning={(msg) => showToast(msg)}
       />
 
       <!-- 演出モード＆パラメータ -->
@@ -348,10 +383,12 @@
 
   <!-- エクスポートモーダル -->
   <ExportModal
-    isOpen={isExportModalOpen}
+    bind:isOpen={isExportModalOpen}
+    bind:exportSettings
     {renderer}
     {effectState}
     {canvasSettings}
+    currentPreviewTime={currentTime}
     onClose={() => { isExportModalOpen = false; }}
   />
 
@@ -360,7 +397,22 @@
     isOpen={isPresetModalOpen}
     {canvasSettings}
     {effectState}
+    {exportSettings}
     onClose={() => { isPresetModalOpen = false; }}
     onApplyPreset={handleApplyPreset}
   />
+
+  <!-- トースト通知 -->
+  {#if toastMessage}
+    <div style="position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: #f59e0b; border: 1px solid #f59e0b; padding: 0.75rem 1.25rem; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); z-index: 100; font-size: 0.85rem; display: flex; align-items: center; gap: 0.6rem;">
+      <span>⚠️</span>
+      <span>{toastMessage}</span>
+      <button
+        onclick={() => { toastMessage = null; }}
+        style="background: transparent; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem; margin-left: 0.5rem; line-height: 1;"
+      >
+        ✕
+      </button>
+    </div>
+  {/if}
 </main>

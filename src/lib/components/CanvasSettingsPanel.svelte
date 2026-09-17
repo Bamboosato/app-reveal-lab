@@ -6,9 +6,10 @@
     settings: CanvasSettings;
     onUpdateImage: (img: HTMLImageElement | HTMLCanvasElement) => void;
     onResetToSample: () => void;
+    onWarning?: (msg: string) => void;
   }
 
-  let { settings = $bindable(), onUpdateImage, onResetToSample }: Props = $props();
+  let { settings = $bindable(), onUpdateImage, onResetToSample, onWarning }: Props = $props();
 
   let isDragging = $state(false);
 
@@ -24,7 +25,7 @@
     const input = e.target as HTMLInputElement;
     if (input.files && input.files[0]) {
       try {
-        const img = await loadImageFromFile(input.files[0]);
+        const img = await loadImageFromFile(input.files[0], onWarning);
         onUpdateImage(img);
       } catch (err: any) {
         alert(err.message);
@@ -37,7 +38,7 @@
     isDragging = false;
     if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
       try {
-        const img = await loadImageFromFile(e.dataTransfer.files[0]);
+        const img = await loadImageFromFile(e.dataTransfer.files[0], onWarning);
         onUpdateImage(img);
       } catch (err: any) {
         alert(err.message);

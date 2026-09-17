@@ -12,19 +12,23 @@
     renderer: RevealRenderer | null;
     effectState: EffectState;
     canvasSettings: CanvasSettings;
+    exportSettings: ExportSettings;
+    currentPreviewTime?: number;
     onClose: () => void;
   }
 
-  let { isOpen, renderer, effectState, canvasSettings, onClose }: Props = $props();
-
-  let exportSettings = $state<ExportSettings>({
-    format: 'mp4',
-    resolution: '720p',
-    fps: 30,
-    gifPaletteMode: 'per-frame',
-  });
+  let {
+    isOpen,
+    renderer,
+    effectState,
+    canvasSettings,
+    exportSettings = $bindable(),
+    currentPreviewTime = 0,
+    onClose,
+  }: Props = $props();
 
   let isExporting = $state(false);
+  let isCanceling = $state(false);
   let progressPercent = $state(0);
   let statusText = $state('');
   let currentFrame = $state(0);
@@ -98,22 +102,10 @@
         return;
       }
 
-      // MP4判定
-      const mp4Check = await checkVideoConfigSupported('mp4', w, h, fps);
-      // WebM判定
-      const webmCheck = await checkVideoConfigSupported('webm', w, h, fps);
-
-      if (!isSubscribed) return;
-
-      codecSupport.mp4Supported = mp4Check.supported;
-      codecSupport.webmSupported = webmCheck.supported;
-
-      if (exportSettings.format === 'mp4') {
-        codecSupport.currentSupported = mp4Check.supported;
-        codecSupport.errorReason = mp4Check.error;
-      } else if (exportSettings.format === 'webm') {
-        codecSupport.currentSupported = webmCheck.supported;
-        codecSupport.errorReason = webmCheck.error;
+      const res = await checkVideoConfigSupported(exportSettings.format, w, h, fps);
+      if (isSubscribed) {
+        codecSupport.currentSupported = res.supported;
+        codecSupport.errorReason = res.error;
       }
     }
 
@@ -124,7 +116,35 @@
     };
   });
 
-  // モーダルクローズ時のBlob URL解放
+  // モーダルオープン時の全体コーデック能力判定
+  $effect(() => {
+    if (!isOpen) return;
+
+    const w = targetDimensions.width;
+    const h = targetDimensions.height;
+    const fps = exportSettings.fps;
+
+    let isSubscribed = true;
+
+    async function checkAll() {
+      const [mp4, webm] = await Promise.all([
+        checkVideoConfigSupported('mp4', w, h, fps),
+        checkVideoConfigSupported('webm', w, h, fps),
+      ]);
+
+      if (isSubscribed) {
+        codecSupport.mp4Supported = mp4.supported;
+        codecSupport.webmSupported = webm.supported;
+      }
+    }
+
+    checkAll();
+
+    return () => {
+      isSubscribed = false;
+    };
+  });
+
   function handleCloseModal() {
     cleanupBlobUrl();
     result = null;
@@ -143,6 +163,7 @@
     if (!renderer) return;
     cleanupBlobUrl();
     isExporting = true;
+    isCanceling = false;
     progressPercent = 0;
     statusText = 'エクスポート準備中...';
     result = null;
@@ -161,22 +182,28 @@
           currentFrame = frame;
           totalFrames = total;
           statusText = text;
-        }
+        },
+        currentPreviewTime
       );
       result = res;
     } catch (err: any) {
       errorMsg = err?.message || 'エクスポート中にエラーが発生しました。';
     } finally {
       isExporting = false;
+      isCanceling = false;
       activePipeline = null;
     }
   }
 
-  function handleCancel() {
-    if (activePipeline) {
-      activePipeline.cancel();
-      statusText = 'キャンセルしました。';
-      isExporting = false;
+  async function handleCancel() {
+    if (activePipeline && !isCanceling) {
+      isCanceling = true;
+      statusText = 'キャンセル処理中...';
+      try {
+        await activePipeline.cancel();
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -351,9 +378,10 @@
             </div>
             <button
               onclick={handleCancel}
-              style="margin-top: 0.6rem; width: 100%; padding: 0.35rem; background: #ef4444; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;"
+              disabled={isCanceling}
+              style="margin-top: 0.6rem; width: 100%; padding: 0.35rem; background: {isCanceling ? '#4b5563' : '#ef4444'}; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: {isCanceling ? 'not-allowed' : 'pointer'};"
             >
-              ❌ 生成を中止する
+              {isCanceling ? '⏳ キャンセル処理中...' : '❌ 生成を中止する'}
             </button>
           </div>
         {:else}

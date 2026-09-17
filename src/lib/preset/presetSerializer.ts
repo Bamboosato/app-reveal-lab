@@ -68,6 +68,23 @@ export function exportPresetAsJSON(preset: AppRevealPreset): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+const VALID_ASPECT_RATIOS = ['9:16', '1:1', '16:9', '4:5', 'original'] as const;
+const VALID_FIT_MODES = ['contain', 'cover'] as const;
+const VALID_EFFECT_MODES = ['radial_out', 'radial_in', 'linear_scan', 'block_scan', 'random_reveal', 'multi_step_lod'] as const;
+const VALID_EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'cubic'] as const;
+const VALID_RESOLUTIONS = ['720p', '1080p'] as const;
+const VALID_FORMATS = ['mp4', 'webm', 'gif', 'png'] as const;
+const VALID_PALETTE_MODES = ['per-frame', 'global'] as const;
+
+function parseFiniteNumber(val: any, fallback: number, min?: number, max?: number): number {
+  const n = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(n)) return fallback;
+  let clamped = n;
+  if (min !== undefined) clamped = Math.max(min, clamped);
+  if (max !== undefined) clamped = Math.min(max, clamped);
+  return clamped;
+}
+
 /**
  * インポートされたJSON文字列をパースし、スキーマを検証
  */
@@ -91,7 +108,7 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
     throw new Error('プリセットに必須の設定項目（canvas または animation）が含まれていません。');
   }
 
-  // 必須フィールドの存在確認とフォールバック（0値の消失を防ぐため ?? を使用）
+  // 必須フィールドの存在確認、NaNチェック、ホワイトリスト検証（0値消失防止のため parseFiniteNumber / ?? を使用）
   const preset: AppRevealPreset = {
     schemaVersion: 1,
     id: parsed.id || `imported-${Date.now()}`,
@@ -101,35 +118,37 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
     updatedAt: new Date().toISOString(),
     isBuiltin: false,
     canvas: {
-      aspectRatio: parsed.canvas.aspectRatio || '1:1',
-      fit: parsed.canvas.fit || 'contain',
+      aspectRatio: VALID_ASPECT_RATIOS.includes(parsed.canvas.aspectRatio) ? parsed.canvas.aspectRatio : '1:1',
+      fit: VALID_FIT_MODES.includes(parsed.canvas.fit) ? parsed.canvas.fit : 'contain',
       positionOffset: {
-        x: Number(parsed.canvas.positionOffset?.x ?? 0),
-        y: Number(parsed.canvas.positionOffset?.y ?? 0),
+        x: parseFiniteNumber(parsed.canvas.positionOffset?.x, 0, -4096, 4096),
+        y: parseFiniteNumber(parsed.canvas.positionOffset?.y, 0, -4096, 4096),
       },
-      backgroundColor: parsed.canvas.backgroundColor || '#000000',
+      backgroundColor: typeof parsed.canvas.backgroundColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(parsed.canvas.backgroundColor)
+        ? parsed.canvas.backgroundColor
+        : '#000000',
       transparent: Boolean(parsed.canvas.transparent),
     },
     animation: {
-      mode: parsed.animation.mode || 'radial_out',
-      duration: Math.max(0.5, Math.min(10.0, Number(parsed.animation.duration ?? 3.0))),
-      startDelay: Math.max(0.0, Math.min(5.0, Number(parsed.animation.startDelay ?? 0.5))),
-      holdTime: Math.max(0.0, Math.min(5.0, Number(parsed.animation.holdTime ?? 1.0))),
-      mosaicSize: Math.max(4, Math.min(128, Number(parsed.animation.mosaicSize ?? 48))),
-      feather: Math.max(0.0, Math.min(1.0, Number(parsed.animation.feather ?? 0.15))),
-      easing: parsed.animation.easing || 'cubic',
+      mode: VALID_EFFECT_MODES.includes(parsed.animation.mode) ? parsed.animation.mode : 'radial_out',
+      duration: parseFiniteNumber(parsed.animation.duration, 3.0, 0.5, 10.0),
+      startDelay: parseFiniteNumber(parsed.animation.startDelay, 0.5, 0.0, 5.0),
+      holdTime: parseFiniteNumber(parsed.animation.holdTime, 1.0, 0.0, 5.0),
+      mosaicSize: Math.round(parseFiniteNumber(parsed.animation.mosaicSize, 48, 4, 128)),
+      feather: parseFiniteNumber(parsed.animation.feather, 0.15, 0.0, 1.0),
+      easing: VALID_EASINGS.includes(parsed.animation.easing) ? parsed.animation.easing : 'cubic',
       loop: parsed.animation.loop !== undefined ? Boolean(parsed.animation.loop) : true,
-      seed: Number(parsed.animation.seed ?? 12345),
-      gridSize: parsed.animation.gridSize !== undefined ? Number(parsed.animation.gridSize) : undefined,
-      noiseStrength: parsed.animation.noiseStrength !== undefined ? Number(parsed.animation.noiseStrength) : undefined,
-      lodSteps: parsed.animation.lodSteps !== undefined ? Number(parsed.animation.lodSteps) : undefined,
+      seed: Math.round(parseFiniteNumber(parsed.animation.seed, 12345, 0, 999999)),
+      gridSize: parsed.animation.gridSize !== undefined ? Math.round(parseFiniteNumber(parsed.animation.gridSize, 16, 4, 64)) : undefined,
+      noiseStrength: parsed.animation.noiseStrength !== undefined ? parseFiniteNumber(parsed.animation.noiseStrength, 0.5, 0.0, 1.0) : undefined,
+      lodSteps: parsed.animation.lodSteps !== undefined ? Math.round(parseFiniteNumber(parsed.animation.lodSteps, 4, 2, 8)) : undefined,
       lodSmooth: parsed.animation.lodSmooth !== undefined ? Boolean(parsed.animation.lodSmooth) : undefined,
     },
     exportSettings: {
-      resolutionPreset: parsed.exportSettings?.resolutionPreset || '720p',
-      fps: parsed.exportSettings?.fps || 30,
-      format: parsed.exportSettings?.format || 'mp4',
-      gifPaletteMode: parsed.exportSettings?.gifPaletteMode || 'per-frame',
+      resolutionPreset: VALID_RESOLUTIONS.includes(parsed.exportSettings?.resolutionPreset) ? parsed.exportSettings.resolutionPreset : '720p',
+      fps: parseFiniteNumber(parsed.exportSettings?.fps, 30, 10, 60),
+      format: VALID_FORMATS.includes(parsed.exportSettings?.format) ? parsed.exportSettings.format : 'mp4',
+      gifPaletteMode: VALID_PALETTE_MODES.includes(parsed.exportSettings?.gifPaletteMode) ? parsed.exportSettings.gifPaletteMode : 'per-frame',
     },
   };
 
