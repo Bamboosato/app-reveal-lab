@@ -62,13 +62,17 @@ vec2 canvasToImageUv(vec2 cUv, float canvasAspect, float imageAspect) {
       imgUv.y = (cUv.y - 0.5) / scale + 0.5;
     }
   } else {
+    // cover（全画面: 余白なし・アスペクト比完全維持で端をトリミング）
     vec2 scale = vec2(1.0);
     if (canvasAspect > imageAspect) {
-      scale.y = canvasAspect / imageAspect;
+      // キャンバスが横長 -> 横幅を合わせ、上下を均等にトリミング
+      scale.y = imageAspect / canvasAspect;
     } else {
-      scale.x = imageAspect / canvasAspect;
+      // キャンバスが縦長 -> 高さを合わせ、左右を均等にトリミング
+      scale.x = canvasAspect / imageAspect;
     }
-    vec2 offset = u_panOffset * 0.5 * (scale - 1.0);
+    // 表示されない余剰分 (1.0 - scale) を panOffset で移動可能にする
+    vec2 offset = u_panOffset * 0.5 * (vec2(1.0) - scale);
     imgUv = (cUv - 0.5) * scale + 0.5 + offset;
   }
   return clamp(imgUv, 0.0, 1.0);
