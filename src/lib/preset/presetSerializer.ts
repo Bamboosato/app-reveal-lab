@@ -43,6 +43,7 @@ export function createPresetFromState(
       noiseStrength: effectState.block.noiseStrength,
       lodSteps: effectState.lod.steps,
       lodSmooth: effectState.lod.smooth,
+      stagedReveal: effectState.common.stagedReveal !== false,
     },
     exportSettings: {
       resolutionPreset: exportSettings?.resolution || '720p',
@@ -154,6 +155,7 @@ export function parseAndValidatePresetJSON(jsonContent: string): AppRevealPreset
       noiseStrength: parsed.animation.noiseStrength !== undefined ? parseFiniteNumber(parsed.animation.noiseStrength, 0.5, 0.0, 1.0) : undefined,
       lodSteps: parsed.animation.lodSteps !== undefined ? Math.round(parseFiniteNumber(parsed.animation.lodSteps, 4, 2, 8)) : undefined,
       lodSmooth: parsed.animation.lodSmooth !== undefined ? parseStrictBoolean(parsed.animation.lodSmooth, undefined) : undefined,
+      stagedReveal: parsed.animation.stagedReveal !== undefined ? parseStrictBoolean(parsed.animation.stagedReveal, true) : undefined,
     },
     exportSettings: {
       resolutionPreset: VALID_RESOLUTIONS.includes(parsed.exportSettings?.resolutionPreset) ? parsed.exportSettings.resolutionPreset : '720p',

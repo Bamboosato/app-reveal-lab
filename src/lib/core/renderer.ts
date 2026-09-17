@@ -181,6 +181,7 @@ export class RevealRenderer {
 
       u_lodSteps: effectState.lod.steps,
       u_lodSmooth: effectState.lod.smooth ? 1 : 0,
+      u_stagedReveal: effectState.common.stagedReveal !== false ? 1 : 0,
     };
 
     twgl.setUniforms(this.programInfo, uniforms);

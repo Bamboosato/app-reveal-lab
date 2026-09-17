@@ -34,6 +34,7 @@
         feather: 0.15,
         easing: 'cubic',
         loop: true,
+        stagedReveal: true,
       },
       block: {
         gridCount: 16,
@@ -338,6 +339,7 @@
         feather: preset.animation.feather,
         easing: preset.animation.easing,
         loop: preset.animation.loop,
+        stagedReveal: preset.animation.stagedReveal ?? true,
       },
       block: {
         gridCount: preset.animation.gridSize ?? 16,

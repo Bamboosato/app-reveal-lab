@@ -28,6 +28,7 @@ export interface CommonParams {
   feather: number; // 境界ぼかし幅 (0.01 ~ 0.5)
   easing: EasingType;
   loop: boolean;
+  stagedReveal?: boolean; // 段階的ランダム解像 (初期モザイクから段階的に高精細化)
 }
 
 export interface BlockParams {

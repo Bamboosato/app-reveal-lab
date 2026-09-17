@@ -152,6 +152,21 @@
         {/each}
       </select>
     </div>
+
+    {#if state.mode !== 'multi_step_lod'}
+      <div style="border-top: 1px solid #374151; padding-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="font-weight: 500;">段階的ランダム解像:</span>
+          <p style="font-size: 0.7rem; color: #9ca3af; margin: 0.1rem 0 0 0;">粗モザイクから段階的に高精細化</p>
+        </div>
+        <button
+          onclick={() => { state.common.stagedReveal = state.common.stagedReveal === false ? true : false; }}
+          style="padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border: 1px solid {state.common.stagedReveal !== false ? '#3b82f6' : '#4b5563'}; background: {state.common.stagedReveal !== false ? '#2563eb' : '#374151'}; color: white;"
+        >
+          {state.common.stagedReveal !== false ? 'ON (多段階)' : 'OFF (2値)'}
+        </button>
+      </div>
+    {/if}
   </div>
 
   <!-- 演出モード固有パラメータ -->

@@ -28,6 +28,7 @@ describe('presetSerializer unit tests', () => {
         noiseStrength: 0.8,
         lodSteps: 6,
         lodSmooth: true,
+        stagedReveal: true,
       },
       exportSettings: {
         resolutionPreset: '1080p',
@@ -46,6 +47,7 @@ describe('presetSerializer unit tests', () => {
     assert.equal(result.animation.holdTime, 0);   // ゼロ値保持
     assert.equal(result.animation.loop, false);
     assert.equal(result.animation.lodSmooth, true);
+    assert.equal(result.animation.stagedReveal, true);
     assert.equal(result.exportSettings.fps, 60);
     assert.equal(result.exportSettings.format, 'webm');
   });
@@ -60,6 +62,7 @@ describe('presetSerializer unit tests', () => {
         mode: 'radial_out',
         loop: 'false',
         lodSmooth: 'false',
+        stagedReveal: 'false',
       },
     });
 
@@ -67,6 +70,7 @@ describe('presetSerializer unit tests', () => {
     assert.equal(result.canvas.transparent, false, 'String "false" should parse to boolean false');
     assert.equal(result.animation.loop, false, 'String "false" should parse to boolean false');
     assert.equal(result.animation.lodSmooth, false, 'String "false" should parse to boolean false');
+    assert.equal(result.animation.stagedReveal, false, 'String "false" should parse to boolean false');
   });
 
   it('should fallback invalid whitelisted values to safe defaults', () => {

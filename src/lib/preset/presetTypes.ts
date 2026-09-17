@@ -33,6 +33,7 @@ export interface AppRevealPreset {
     noiseStrength?: number;
     lodSteps?: number;
     lodSmooth?: boolean;
+    stagedReveal?: boolean;
   };
   exportSettings: {
     resolutionPreset: ResolutionPreset;
