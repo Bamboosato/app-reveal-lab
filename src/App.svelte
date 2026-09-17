@@ -7,8 +7,9 @@
   import ExportModal from './lib/components/ExportModal.svelte';
   import PresetModal from './lib/components/PresetModal.svelte';
   import { RevealRenderer } from './lib/core/renderer';
-  import { calculateCanvasDimensions, generateSampleImage } from './lib/core/imageLoader';
+  import { calculateCanvasDimensions, generateSampleImage, loadImageFromFile } from './lib/core/imageLoader';
   import type { CanvasSettings, EffectState, ResolutionDimension } from './lib/core/types';
+  import type { ExportSettings } from './lib/export/exportTypes';
   import type { AppRevealPreset } from './lib/preset/presetTypes';
 
   // 1. キャンバス初期設定
@@ -48,6 +49,41 @@
 
   let canvasSettings = $state<CanvasSettings>(getDefaultCanvasSettings());
   let effectState = $state<EffectState>(getDefaultEffectState());
+  let exportSettings = $state<ExportSettings>({
+    format: 'mp4',
+    resolution: '720p',
+    fps: 30,
+    gifPaletteMode: 'per-frame',
+  });
+
+  interface ToastData {
+    message: string;
+    type: 'warning' | 'info' | 'success' | 'update';
+    actionText?: string;
+    onAction?: () => void;
+  }
+
+  // トースト通知状態
+  let toast = $state<ToastData | null>(null);
+  let toastTimer: any = null;
+
+  function showToast(msg: string, type: 'warning' | 'info' | 'success' = 'warning') {
+    if (toastTimer) clearTimeout(toastTimer);
+    toast = { message: msg, type };
+    toastTimer = setTimeout(() => {
+      toast = null;
+    }, 4000);
+  }
+
+  function showUpdateToast(onUpdate: () => void) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toast = {
+      message: '新しいバージョンが利用可能です。',
+      type: 'update',
+      actionText: '再読み込み',
+      onAction: onUpdate,
+    };
+  }
 
   // エクスポートモーダル状態
   let isExportModalOpen = $state(false);
@@ -80,11 +116,13 @@
     )
   );
 
-  // 寸法や設定変更時のレンダラーリサイズ＆再描画
+  // 寸法や設定変更時のレンダラーリサイズ＆再描画（再生中の二重描画は抑止）
   $effect(() => {
     if (renderer) {
       renderer.resize(dimensions.width, dimensions.height);
-      renderCurrentFrame();
+      if (!isPlaying) {
+        renderCurrentFrame();
+      }
     }
   });
 
@@ -122,10 +160,57 @@
       }
     }
 
+    async function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            try {
+              const img = await loadImageFromFile(file, (msg) => showToast(msg));
+              handleUpdateImage(img);
+            } catch (err: any) {
+              alert('クリップボード画像の読み込みに失敗しました: ' + err.message);
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // PWA更新・オフライン準備イベントリスナー
+    const handlePwaNeedRefresh = (e: Event) => {
+      const customEvent = e as CustomEvent<{ updateSW: (reload?: boolean) => Promise<void> }>;
+      showUpdateToast(async () => {
+        if (customEvent.detail?.updateSW) {
+          await customEvent.detail.updateSW(true);
+        } else {
+          window.location.reload();
+        }
+      });
+    };
+
+    const handlePwaOfflineReady = () => {
+      showToast('オフラインで使用可能になりました。', 'success');
+    };
+
+    // prefers-reduced-motion 配慮: OSのアニメーション低減設定が有効な場合はループをオフ
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      effectState.common.loop = false;
+    }
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('paste', handlePaste);
+    window.addEventListener('pwa-need-refresh', handlePwaNeedRefresh);
+    window.addEventListener('pwa-offline-ready', handlePwaOfflineReady);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handlePaste);
+      window.removeEventListener('pwa-need-refresh', handlePwaNeedRefresh);
+      window.removeEventListener('pwa-offline-ready', handlePwaOfflineReady);
       if (animFrameId) cancelAnimationFrame(animFrameId);
       renderer?.dispose();
     };
@@ -221,6 +306,12 @@
     pausePlayback();
     canvasSettings = getDefaultCanvasSettings();
     effectState = getDefaultEffectState();
+    exportSettings = {
+      format: 'mp4',
+      resolution: '720p',
+      fps: 30,
+      gifPaletteMode: 'per-frame',
+    };
     currentTime = 0;
     handleResetToSample();
   }
@@ -234,8 +325,9 @@
       fit: preset.canvas.fit,
       positionOffset: { ...preset.canvas.positionOffset },
       backgroundColor: preset.canvas.backgroundColor,
+      transparent: Boolean(preset.canvas.transparent),
     };
-    // 2. 演出設定
+    // 2. 演出設定（0値消失防止のため ?? を使用）
     effectState = {
       mode: preset.animation.mode,
       common: {
@@ -248,15 +340,24 @@
         loop: preset.animation.loop,
       },
       block: {
-        gridCount: preset.animation.gridSize || 16,
-        noiseStrength: preset.animation.noiseStrength || 0.5,
+        gridCount: preset.animation.gridSize ?? 16,
+        noiseStrength: preset.animation.noiseStrength ?? 0.5,
         seed: preset.animation.seed,
       },
       lod: {
-        steps: preset.animation.lodSteps || 4,
-        smooth: preset.animation.lodSmooth || false,
+        steps: preset.animation.lodSteps ?? 4,
+        smooth: preset.animation.lodSmooth ?? false,
       },
     };
+    // 3. 出力設定の反映（プリセット往復）
+    if (preset.exportSettings) {
+      exportSettings = {
+        format: preset.exportSettings.format,
+        resolution: preset.exportSettings.resolutionPreset,
+        fps: preset.exportSettings.fps,
+        gifPaletteMode: preset.exportSettings.gifPaletteMode ?? 'per-frame',
+      };
+    }
     currentTime = 0;
     renderCurrentFrame();
   }
@@ -314,6 +415,7 @@
         bind:settings={canvasSettings}
         onUpdateImage={handleUpdateImage}
         onResetToSample={handleResetToSample}
+        onWarning={(msg) => showToast(msg)}
       />
 
       <!-- 演出モード＆パラメータ -->
@@ -324,9 +426,11 @@
   <!-- エクスポートモーダル -->
   <ExportModal
     isOpen={isExportModalOpen}
+    bind:exportSettings
     {renderer}
     {effectState}
     {canvasSettings}
+    currentPreviewTime={currentTime}
     onClose={() => { isExportModalOpen = false; }}
   />
 
@@ -335,7 +439,34 @@
     isOpen={isPresetModalOpen}
     {canvasSettings}
     {effectState}
+    {exportSettings}
     onClose={() => { isPresetModalOpen = false; }}
     onApplyPreset={handleApplyPreset}
   />
+
+  <!-- トースト通知 -->
+  {#if toast}
+    <div
+      role="status"
+      style="position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: {toast.type === 'warning' ? '#f59e0b' : toast.type === 'success' ? '#10b981' : '#60a5fa'}; border: 1px solid {toast.type === 'warning' ? '#f59e0b' : toast.type === 'success' ? '#10b981' : '#3b82f6'}; padding: 0.75rem 1.25rem; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); z-index: 100; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem;"
+    >
+      <span>{toast.type === 'warning' ? '⚠️' : toast.type === 'success' ? '✅' : '🚀'}</span>
+      <span>{toast.message}</span>
+      {#if toast.actionText && toast.onAction}
+        <button
+          onclick={toast.onAction}
+          style="background: #3b82f6; color: white; border: none; padding: 0.3rem 0.65rem; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.8rem;"
+        >
+          {toast.actionText}
+        </button>
+      {/if}
+      <button
+        onclick={() => { toast = null; }}
+        style="background: transparent; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem; margin-left: 0.25rem; line-height: 1;"
+        title="閉じる"
+      >
+        ✕
+      </button>
+    </div>
+  {/if}
 </main>

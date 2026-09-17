@@ -134,15 +134,18 @@ export function generateSampleImage(width = 1280, height = 1280): HTMLCanvasElem
 }
 
 /**
- * ファイルから画像を安全に読み込む
+ * ファイルから画像を安全に読み込む（長辺4096px超は自動縮小）
  */
-export async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+export async function loadImageFromFile(
+  file: File,
+  onResizeWarning?: (msg: string) => void
+): Promise<HTMLImageElement | HTMLCanvasElement> {
   const allowed = ['image/jpeg', 'image/png', 'image/webp'];
   if (!allowed.includes(file.type)) {
     throw new Error(`サポートされていない画像形式です: ${file.type || file.name}`);
   }
 
-  return new Promise((resolve, reject) => {
+  const rawImg = await new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
@@ -155,4 +158,32 @@ export async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
     };
     img.src = url;
   });
+
+  const maxSide = 4096;
+  const w = rawImg.naturalWidth;
+  const h = rawImg.naturalHeight;
+
+  if (w > maxSide || h > maxSide) {
+    let targetW = w;
+    let targetH = h;
+    if (w >= h) {
+      targetW = maxSide;
+      targetH = Math.round(h * (maxSide / w));
+    } else {
+      targetH = maxSide;
+      targetW = Math.round(w * (maxSide / h));
+    }
+    const msg = `画像サイズ (${w}×${h}) が上限の${maxSide}pxを超えているため、${targetW}×${targetH} に自動縮小しました。`;
+    console.warn(msg);
+    onResizeWarning?.(msg);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(rawImg, 0, 0, targetW, targetH);
+    return canvas;
+  }
+
+  return rawImg;
 }

@@ -15,7 +15,7 @@ function modeToId(mode: EffectMode): number {
   }
 }
 
-function hexToRgba(hex: string): [number, number, number, number] {
+function hexToRgba(hex: string, alpha = 1.0): [number, number, number, number] {
   let c = hex.replace('#', '');
   if (c.length === 3) {
     c = c.split('').map(x => x + x).join('');
@@ -24,7 +24,7 @@ function hexToRgba(hex: string): [number, number, number, number] {
   const r = ((num >> 16) & 255) / 255;
   const g = ((num >> 8) & 255) / 255;
   const b = (num & 255) / 255;
-  return [r, g, b, 1.0];
+  return [r, g, b, alpha];
 }
 
 export class RevealRenderer {
@@ -156,13 +156,19 @@ export class RevealRenderer {
 
     twgl.setBuffersAndAttributes(gl, this.programInfo, this.bufferInfo);
 
+    const bgAlpha = canvasSettings.transparent ? 0.0 : 1.0;
+    const bgColor = hexToRgba(canvasSettings.backgroundColor, bgAlpha);
+
+    gl.clearColor(bgColor[0], bgColor[1], bgColor[2], bgColor[3]);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
     const uniforms = {
       u_texture: this.texture,
       u_canvasRes: [this.canvas.width, this.canvas.height],
       u_imageRes: [this.imageWidth, this.imageHeight],
       u_fitMode: canvasSettings.fit === 'cover' ? 1 : 0,
       u_panOffset: [canvasSettings.positionOffset.x, canvasSettings.positionOffset.y],
-      u_bgColor: hexToRgba(canvasSettings.backgroundColor),
+      u_bgColor: bgColor,
 
       u_mode: modeToId(effectState.mode),
       u_progress: progress,

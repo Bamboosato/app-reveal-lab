@@ -4,25 +4,31 @@
   import type { RevealRenderer } from '../core/renderer';
   import type { EffectState, CanvasSettings } from '../core/types';
   import { ExportPipeline } from '../export/exportPipeline';
+  import { checkVideoConfigSupported } from '../spike/capabilities';
+  import { calculateCanvasDimensions } from '../core/imageLoader';
 
   interface Props {
     isOpen: boolean;
     renderer: RevealRenderer | null;
     effectState: EffectState;
     canvasSettings: CanvasSettings;
+    exportSettings: ExportSettings;
+    currentPreviewTime?: number;
     onClose: () => void;
   }
 
-  let { isOpen, renderer, effectState, canvasSettings, onClose }: Props = $props();
-
-  let exportSettings = $state<ExportSettings>({
-    format: 'mp4',
-    resolution: '720p',
-    fps: 30,
-    gifPaletteMode: 'per-frame',
-  });
+  let {
+    isOpen,
+    renderer,
+    effectState,
+    canvasSettings,
+    exportSettings = $bindable(),
+    currentPreviewTime = 0,
+    onClose,
+  }: Props = $props();
 
   let isExporting = $state(false);
+  let isCanceling = $state(false);
   let progressPercent = $state(0);
   let statusText = $state('');
   let currentFrame = $state(0);
@@ -30,10 +36,38 @@
   let result = $state<ExportResult | null>(null);
   let errorMsg = $state<string | null>(null);
 
+  // コーデック動的能力判定状態
+  let codecSupport = $state<{
+    mp4Supported: boolean;
+    webmSupported: boolean;
+    currentSupported: boolean;
+    errorReason?: string;
+  }>({
+    mp4Supported: true,
+    webmSupported: true,
+    currentSupported: true,
+  });
+
   let activePipeline: ExportPipeline | null = null;
+
+  // 成果物Blob URLの破棄ヘルパー
+  function cleanupBlobUrl() {
+    if (result?.url) {
+      URL.revokeObjectURL(result.url);
+    }
+  }
 
   let totalDuration = $derived(
     effectState.common.startDelay + effectState.common.duration + effectState.common.holdTime
+  );
+
+  let targetDimensions = $derived(
+    calculateCanvasDimensions(
+      canvasSettings.aspectRatio,
+      exportSettings.resolution,
+      renderer?.imageWidth || 1280,
+      renderer?.imageHeight || 720
+    )
   );
 
   let estimatedSize = $derived(
@@ -49,6 +83,74 @@
   let gifFrames = $derived(Math.ceil(totalDuration * exportSettings.fps));
   let isGifOverLimit = $derived(exportSettings.format === 'gif' && gifFrames > 150);
 
+  // 設定変更時のリアルタイム動的コーデック検証
+  $effect(() => {
+    if (!isOpen) return;
+
+    const w = targetDimensions.width;
+    const h = targetDimensions.height;
+    const fps = exportSettings.fps;
+
+    let isSubscribed = true;
+
+    async function check() {
+      if (exportSettings.format === 'gif' || exportSettings.format === 'png') {
+        if (isSubscribed) {
+          codecSupport.currentSupported = true;
+          codecSupport.errorReason = undefined;
+        }
+        return;
+      }
+
+      const res = await checkVideoConfigSupported(exportSettings.format, w, h, fps);
+      if (isSubscribed) {
+        codecSupport.currentSupported = res.supported;
+        codecSupport.errorReason = res.error;
+      }
+    }
+
+    check();
+
+    return () => {
+      isSubscribed = false;
+    };
+  });
+
+  // モーダルオープン時の全体コーデック能力判定
+  $effect(() => {
+    if (!isOpen) return;
+
+    const w = targetDimensions.width;
+    const h = targetDimensions.height;
+    const fps = exportSettings.fps;
+
+    let isSubscribed = true;
+
+    async function checkAll() {
+      const [mp4, webm] = await Promise.all([
+        checkVideoConfigSupported('mp4', w, h, fps),
+        checkVideoConfigSupported('webm', w, h, fps),
+      ]);
+
+      if (isSubscribed) {
+        codecSupport.mp4Supported = mp4.supported;
+        codecSupport.webmSupported = webm.supported;
+      }
+    }
+
+    checkAll();
+
+    return () => {
+      isSubscribed = false;
+    };
+  });
+
+  function handleCloseModal() {
+    cleanupBlobUrl();
+    result = null;
+    onClose();
+  }
+
   // フォーマット切り替え時のfps自動調整
   function handleFormatChange(fmt: ExportFormat) {
     exportSettings.format = fmt;
@@ -59,7 +161,9 @@
 
   async function startExport() {
     if (!renderer) return;
+    cleanupBlobUrl();
     isExporting = true;
+    isCanceling = false;
     progressPercent = 0;
     statusText = 'エクスポート準備中...';
     result = null;
@@ -78,22 +182,28 @@
           currentFrame = frame;
           totalFrames = total;
           statusText = text;
-        }
+        },
+        currentPreviewTime
       );
       result = res;
     } catch (err: any) {
       errorMsg = err?.message || 'エクスポート中にエラーが発生しました。';
     } finally {
       isExporting = false;
+      isCanceling = false;
       activePipeline = null;
     }
   }
 
-  function handleCancel() {
-    if (activePipeline) {
-      activePipeline.cancel();
-      statusText = 'キャンセルしました。';
-      isExporting = false;
+  async function handleCancel() {
+    if (activePipeline && !isCanceling) {
+      isCanceling = true;
+      statusText = 'キャンセル処理中...';
+      try {
+        await activePipeline.cancel();
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -137,7 +247,7 @@
           <span>🚀</span> エクスポート（書き出し）
         </h2>
         <button
-          onclick={onClose}
+          onclick={handleCloseModal}
           disabled={isExporting}
           style="background: transparent; border: none; color: #9ca3af; font-size: 1.25rem; cursor: pointer; padding: 0.2rem 0.5rem; line-height: 1;"
         >
@@ -152,15 +262,15 @@
           <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 0.4rem;">出力形式:</div>
           <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem;">
             {#each [
-              { id: 'mp4', label: 'MP4 (標準)', icon: '📹' },
-              { id: 'webm', label: 'WebM (Web)', icon: '🌐' },
-              { id: 'gif', label: 'GIF (アニメ)', icon: '🖼️' },
-              { id: 'png', label: 'PNG (静止画)', icon: '📷' }
+              { id: 'mp4', label: 'MP4 (標準)', icon: '📹', disabled: !codecSupport.mp4Supported },
+              { id: 'webm', label: 'WebM (Web)', icon: '🌐', disabled: !codecSupport.webmSupported },
+              { id: 'gif', label: 'GIF (アニメ)', icon: '🖼️', disabled: false },
+              { id: 'png', label: 'PNG (静止画)', icon: '📷', disabled: false }
             ] as f}
               <button
                 onclick={() => handleFormatChange(f.id as ExportFormat)}
-                disabled={isExporting}
-                style="padding: 0.5rem 0.2rem; background: {exportSettings.format === f.id ? '#2563eb' : '#111827'}; color: white; border: 1px solid {exportSettings.format === f.id ? '#60a5fa' : '#374151'}; border-radius: 6px; font-size: 0.75rem; cursor: pointer; text-align: center;"
+                disabled={isExporting || f.disabled}
+                style="padding: 0.5rem 0.2rem; background: {exportSettings.format === f.id ? '#2563eb' : '#111827'}; color: white; border: 1px solid {exportSettings.format === f.id ? '#60a5fa' : '#374151'}; border-radius: 6px; font-size: 0.75rem; cursor: {f.disabled ? 'not-allowed' : 'pointer'}; text-align: center; opacity: {f.disabled ? 0.35 : 1};"
               >
                 <div>{f.icon}</div>
                 <div style="font-weight: 600; margin-top: 0.2rem;">{f.label}</div>
@@ -235,6 +345,13 @@
           </div>
         </div>
 
+        <!-- コーデック非対応警告 -->
+        {#if !codecSupport.currentSupported && (exportSettings.format === 'mp4' || exportSettings.format === 'webm')}
+          <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 0.6rem; font-size: 0.75rem; color: #fca5a5;">
+            ⚠️ <strong>非対応設定:</strong> {codecSupport.errorReason || 'お使いの環境はこの設定での動画出力に対応していません。解像度やfpsを下げるか、WebM/GIFをお試しください。'}
+          </div>
+        {/if}
+
         <!-- GIF制限警告 -->
         {#if isGifOverLimit}
           <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; padding: 0.6rem; font-size: 0.75rem; color: #fca5a5;">
@@ -261,17 +378,19 @@
             </div>
             <button
               onclick={handleCancel}
-              style="margin-top: 0.6rem; width: 100%; padding: 0.35rem; background: #ef4444; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;"
+              disabled={isCanceling}
+              style="margin-top: 0.6rem; width: 100%; padding: 0.35rem; background: {isCanceling ? '#4b5563' : '#ef4444'}; color: white; border: none; border-radius: 4px; font-size: 0.75rem; cursor: {isCanceling ? 'not-allowed' : 'pointer'};"
             >
-              ❌ 生成を中止する
+              {isCanceling ? '⏳ キャンセル処理中...' : '❌ 生成を中止する'}
             </button>
           </div>
         {:else}
           <!-- アクションボタン -->
+          {@const isActionDisabled = isGifOverLimit || !codecSupport.currentSupported}
           <button
             onclick={startExport}
-            disabled={isGifOverLimit}
-            style="width: 100%; padding: 0.75rem; background: {isGifOverLimit ? '#4b5563' : '#2563eb'}; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: {isGifOverLimit ? 'not-allowed' : 'pointer'}; display: flex; align-items: center; justify-content: center; gap: 0.4rem;"
+            disabled={isActionDisabled}
+            style="width: 100%; padding: 0.75rem; background: {isActionDisabled ? '#4b5563' : '#2563eb'}; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: {isActionDisabled ? 'not-allowed' : 'pointer'}; display: flex; align-items: center; justify-content: center; gap: 0.4rem;"
           >
             <span>🚀</span> {exportSettings.format.toUpperCase()} を生成する
           </button>
@@ -330,7 +449,7 @@
           </div>
 
           <button
-            onclick={() => { result = null; }}
+            onclick={() => { cleanupBlobUrl(); result = null; }}
             style="padding: 0.4rem; background: transparent; border: 1px solid #4b5563; color: #9ca3af; border-radius: 6px; font-size: 0.8rem; cursor: pointer;"
           >
             ← 設定に戻る

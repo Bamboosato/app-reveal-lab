@@ -47,45 +47,49 @@ float hash21(vec2 p, float seed) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
+// キャンバスUVから画像UVへのマッピング関数
+vec2 canvasToImageUv(vec2 cUv, float canvasAspect, float imageAspect) {
+  vec2 imgUv = cUv;
+  if (u_fitMode == 0) {
+    if (canvasAspect > imageAspect) {
+      float scale = imageAspect / canvasAspect;
+      imgUv.x = (cUv.x - 0.5) / scale + 0.5;
+    } else {
+      float scale = canvasAspect / imageAspect;
+      imgUv.y = (cUv.y - 0.5) / scale + 0.5;
+    }
+  } else {
+    vec2 scale = vec2(1.0);
+    if (canvasAspect > imageAspect) {
+      scale.y = canvasAspect / imageAspect;
+    } else {
+      scale.x = imageAspect / canvasAspect;
+    }
+    vec2 offset = u_panOffset * 0.5 * (scale - 1.0);
+    imgUv = (cUv - 0.5) * scale + 0.5 + offset;
+  }
+  return clamp(imgUv, 0.0, 1.0);
+}
+
 void main() {
   vec2 canvasUv = v_canvasUv;
   float canvasAspect = u_canvasRes.x / u_canvasRes.y;
   float imageAspect = u_imageRes.x / u_imageRes.y;
 
-  // 1. contain / cover による画像UVへのマッピング変換
-  vec2 imageUv = canvasUv;
+  // 1. contain 時の余白判定
   bool isOutOfBounds = false;
-
   if (u_fitMode == 0) {
-    // contain (全体表示・余白背景)
     if (canvasAspect > imageAspect) {
-      // キャンバスの方が横長 -> 左右に余白
       float scale = imageAspect / canvasAspect;
-      imageUv.x = (canvasUv.x - 0.5) / scale + 0.5;
-      if (imageUv.x < 0.0 || imageUv.x > 1.0) {
-        isOutOfBounds = true;
-      }
+      float minX = 0.5 - 0.5 * scale;
+      float maxX = 0.5 + 0.5 * scale;
+      if (canvasUv.x < minX || canvasUv.x > maxX) isOutOfBounds = true;
     } else {
-      // キャンバスの方が縦長 -> 上下に余白
       float scale = canvasAspect / imageAspect;
-      imageUv.y = (canvasUv.y - 0.5) / scale + 0.5;
-      if (imageUv.y < 0.0 || imageUv.y > 1.0) {
-        isOutOfBounds = true;
-      }
+      float minY = 0.5 - 0.5 * scale;
+      float maxY = 0.5 + 0.5 * scale;
+      if (canvasUv.y < minY || canvasUv.y > maxY) isOutOfBounds = true;
     }
-  } else {
-    // cover (全画面フィット・トリミング & パン移動)
-    vec2 scale = vec2(1.0);
-    if (canvasAspect > imageAspect) {
-      // キャンバスの方が横長 -> 上下をトリミング
-      scale.y = canvasAspect / imageAspect;
-    } else {
-      // キャンバスの方が縦長 -> 左右をトリミング
-      scale.x = imageAspect / canvasAspect;
-    }
-    // パンオフセットを適用 (オフセット範囲をスケールに合わせる)
-    vec2 offset = u_panOffset * 0.5 * (scale - 1.0);
-    imageUv = (canvasUv - 0.5) * scale + 0.5 + offset;
   }
 
   // contain の余白部分は背景色を描画
@@ -94,35 +98,13 @@ void main() {
     return;
   }
 
+  vec2 imageUv = canvasToImageUv(canvasUv, canvasAspect, imageAspect);
+  vec4 fullResColor = texture(u_texture, imageUv);
+
   // 2. モザイク色の算出
-  float currentBlockSize = max(1.0, mix(u_mosaicSize, 1.0, u_progress));
-  vec2 mosaicGrid = u_canvasRes / currentBlockSize;
-  vec2 mosaicCanvasUv = floor(canvasUv * mosaicGrid) / mosaicGrid;
-
-  // モザイクUVに対応する画像UVを算出
-  vec2 mosaicImageUv = imageUv;
-  if (u_fitMode == 0) {
-    if (canvasAspect > imageAspect) {
-      float scale = imageAspect / canvasAspect;
-      mosaicImageUv.x = (mosaicCanvasUv.x - 0.5) / scale + 0.5;
-    } else {
-      float scale = canvasAspect / imageAspect;
-      mosaicImageUv.y = (mosaicCanvasUv.y - 0.5) / scale + 0.5;
-    }
-  } else {
-    vec2 scale = vec2(1.0);
-    if (canvasAspect > imageAspect) {
-      scale.y = canvasAspect / imageAspect;
-    } else {
-      scale.x = imageAspect / canvasAspect;
-    }
-    vec2 offset = u_panOffset * 0.5 * (scale - 1.0);
-    mosaicImageUv = (mosaicCanvasUv - 0.5) * scale + 0.5 + offset;
-  }
-  mosaicImageUv = clamp(mosaicImageUv, 0.0, 1.0);
-
-  vec4 fullResColor = texture(u_texture, clamp(imageUv, 0.0, 1.0));
-  vec4 mosaicColor = texture(u_texture, mosaicImageUv);
+  vec2 mosaicGrid = u_canvasRes / max(1.0, u_mosaicSize);
+  vec2 mosaicCanvasUv = (floor(canvasUv * mosaicGrid) + 0.5) / mosaicGrid;
+  vec4 mosaicColor = texture(u_texture, canvasToImageUv(mosaicCanvasUv, canvasAspect, imageAspect));
 
   // 3. 演出モード別の進行マスク計算
   float reveal = 0.0;
@@ -147,17 +129,17 @@ void main() {
     reveal = smoothstep(max(0.0, currentRadius - feather), currentRadius, dist);
   }
   else if (u_mode == 2) {
-    // Mode 2: 上から下へ (Linear Scan)
+    // Mode 2: 上から下へ (Linear Scan) - 上端(y=0)から下端(y=1)へ進行
     float currentY = u_progress * (1.0 + feather);
-    reveal = smoothstep(currentY - feather, currentY, 1.0 - canvasUv.y);
+    reveal = 1.0 - smoothstep(max(0.0, currentY - feather), currentY, canvasUv.y);
   }
   else if (u_mode == 3) {
-    // Mode 3: ブロックノイズスキャン (Block Scan)
+    // Mode 3: ブロックノイズスキャン (Block Scan) - 上端行(y=0)から下端行(y=grid-1)へ進行
     vec2 blockCoord = floor(canvasUv * vec2(u_gridCount * canvasAspect, u_gridCount));
     float rnd = hash21(blockCoord, u_seed);
     
-    // 行ベースの進行 (上から下)
-    float rowProgress = (u_gridCount - 1.0 - blockCoord.y) / u_gridCount;
+    // 行ベースの進行 (最上行0.0 -> 最下行1.0)
+    float rowProgress = blockCoord.y / max(1.0, u_gridCount - 1.0);
     // 進行境界付近に乱数による先行出現オフセット
     float noiseOffset = (rnd - 0.5) * u_noiseStrength * 0.4;
     float effectiveRowProgress = rowProgress + noiseOffset;
@@ -172,26 +154,58 @@ void main() {
   }
   else if (u_mode == 5) {
     // Mode 5: 多段階解像度 (Multi-Step LOD)
-    float stepsF = float(max(2, u_lodSteps));
+    if (u_progress >= 1.0) {
+      fragColor = fullResColor;
+      return;
+    }
+
+    float steps = float(max(2, u_lodSteps));
+
     if (u_lodSmooth == 0) {
-      // 階段状ステップ
-      float stepIndex = floor(u_progress * stepsF);
-      float lodFactor = 1.0 - (stepIndex / stepsF);
-      float lodBlockSize = max(1.0, u_mosaicSize * lodFactor);
+      // 階段状（Stepped）
+      float stepIdx = floor(clamp(u_progress, 0.0, 0.9999) * steps);
+      float t = stepIdx / (steps - 1.0);
+      float lodBlockSize = max(1.0, u_mosaicSize * pow(1.0 / u_mosaicSize, t));
+      if (lodBlockSize <= 1.5) {
+        fragColor = fullResColor;
+        return;
+      }
       vec2 lodGrid = u_canvasRes / lodBlockSize;
-      vec2 lodUv = floor(canvasUv * lodGrid) / lodGrid;
-      // imageUv換算
-      vec2 finalUv = mix(mosaicImageUv, imageUv, 1.0 - lodFactor);
-      fragColor = texture(u_texture, clamp(finalUv, 0.0, 1.0));
+      vec2 lodCanvasUv = (floor(canvasUv * lodGrid) + 0.5) / lodGrid;
+      fragColor = texture(u_texture, canvasToImageUv(lodCanvasUv, canvasAspect, imageAspect));
       return;
     } else {
-      // 連続スムーズフェード
-      float lodFactor = 1.0 - u_progress;
-      float lodBlockSize = max(1.0, u_mosaicSize * lodFactor);
-      vec2 lodGrid = u_canvasRes / lodBlockSize;
-      vec2 lodUv = floor(canvasUv * lodGrid) / lodGrid;
-      vec4 lodColor = texture(u_texture, clamp(imageUv, 0.0, 1.0));
-      fragColor = mix(mosaicColor, fullResColor, u_progress);
+      // 連続フェード（Smooth）
+      float p = clamp(u_progress, 0.0, 0.9999) * (steps - 1.0);
+      float currentStep = floor(p);
+      float nextStep = min(steps - 1.0, currentStep + 1.0);
+      float stepFrac = fract(p);
+
+      float t0 = currentStep / (steps - 1.0);
+      float t1 = nextStep / (steps - 1.0);
+
+      float bs0 = max(1.0, u_mosaicSize * pow(1.0 / u_mosaicSize, t0));
+      float bs1 = max(1.0, u_mosaicSize * pow(1.0 / u_mosaicSize, t1));
+
+      vec4 c0;
+      if (bs0 <= 1.5) {
+        c0 = fullResColor;
+      } else {
+        vec2 grid0 = u_canvasRes / bs0;
+        vec2 uv0 = (floor(canvasUv * grid0) + 0.5) / grid0;
+        c0 = texture(u_texture, canvasToImageUv(uv0, canvasAspect, imageAspect));
+      }
+
+      vec4 c1;
+      if (bs1 <= 1.5) {
+        c1 = fullResColor;
+      } else {
+        vec2 grid1 = u_canvasRes / bs1;
+        vec2 uv1 = (floor(canvasUv * grid1) + 0.5) / grid1;
+        c1 = texture(u_texture, canvasToImageUv(uv1, canvasAspect, imageAspect));
+      }
+
+      fragColor = mix(c0, c1, stepFrac);
       return;
     }
   }
